@@ -1333,14 +1333,17 @@ function RackSeismicTool() {
           <text x="20" y="37" fontSize="9" fill="#fbbf24" textAnchor="start">t（板厚）</text>
           <line x1="55" y1="34" x2="88" y2="34" stroke="#fbbf24" strokeWidth="1" />
 
-          <line x1="160" y1="10" x2="160" y2="40" stroke="#94a3b8" strokeWidth="3" />
-          <circle cx="160" cy="12" r="4" fill="#94a3b8" />
-          <text x="230" y="20" fontSize="9" fill="#94a3b8">アンカーボルト</text>
-          <line x1="200" y1="18" x2="164" y2="18" stroke="#94a3b8" strokeWidth="1" />
+          <line x1="120" y1="10" x2="120" y2="40" stroke="#94a3b8" strokeWidth="3" />
+          <circle cx="120" cy="12" r="4" fill="#94a3b8" />
+          <line x1="200" y1="10" x2="200" y2="40" stroke="#94a3b8" strokeWidth="3" />
+          <circle cx="200" cy="12" r="4" fill="#94a3b8" />
+          <text x="223" y="20" fontSize="9" fill="#94a3b8">アンカーボルト×2</text>
+          <line x1="221" y1="17" x2="204" y2="14" stroke="#94a3b8" strokeWidth="1" />
+          <line x1="221" y1="17" x2="124" y2="14" stroke="#94a3b8" strokeWidth="1" />
 
           <rect x="148" y="40" width="16" height="95" fill="#64748b" />
-          <text x="230" y="90" fontSize="9" fill="#94a3b8">吊り材（アングル本体）</text>
-          <line x1="228" y1="86" x2="166" y2="80" stroke="#94a3b8" strokeWidth="1" />
+          <text x="245" y="90" fontSize="9" fill="#94a3b8">吊り材（アングル本体）</text>
+          <line x1="243" y1="86" x2="166" y2="80" stroke="#94a3b8" strokeWidth="1" />
 
           <text x="90" y="185" fontSize="8" fill="#64748b">フランジ（アングルの脚）＝ここの局所曲げを検討</text>
         </svg>
