@@ -4,217 +4,19 @@ import {
   Zap, Grid3x3, Boxes, PieChart, Plug, AlertTriangle, Plus, Trash2,
   ShieldCheck, Printer, FileText, ArrowLeft
 } from "lucide-react";
-
-/* ============================== 共通データ ============================== */
-
-// 参考値：配管外径 (mm) ※要メーカー確認
-const CONDUIT_DATA = {
-  E管: { E19: 19.1, E25: 25.4, E31: 31.8, E39: 38.1, E51: 50.8, E63: 63.5, E75: 76.2 },
-  G管: { G16: 21.0, G22: 26.5, G28: 33.3, G36: 41.9, G42: 47.8, G54: 59.6, G70: 75.2, G82: 87.9 },
-  PF管: { PF16: 21, PF22: 28, PF28: 36, PF36: 44, PF42: 52, PF54: 65, PF70: 81, PF82: 92 },
-  CD管: { CD16: 19, CD22: 26, CD28: 34, CD36: 42, CD42: 48, CD54: 61, CD70: 77, CD82: 87 },
-};
-
-// 参考値：内径 = 外径 - 肉厚*2 の簡易推定（占積率計算用）。実際は規格表で確認。
-const conduitInnerDiameter = (outer) => Math.max(outer - 3.0, 1);
-
-// 参考値：支持間隔（8種）
-const SUPPORT_INTERVAL_DATA = [
-  { name: "金属管（電線管）", horizontal: "2.0m以下", vertical: "2.0m以下", note: "プルボックス等の端部より0.3m以内で支持" },
-  { name: "合成樹脂管（PF・VE管）", horizontal: "1.5m以下", vertical: "1.5m以下", note: "管相互・ボックス接続部付近も支持" },
-  { name: "CD管（コンクリート埋設）", horizontal: "—", vertical: "—", note: "埋設施工のため支持金物は原則不要" },
-  { name: "金属可とう電線管（2種）", horizontal: "1.0m以下", vertical: "1.0m以下", note: "屈曲部の直近も支持" },
-  { name: "ケーブル（一般・平形）", horizontal: "2.0m以下", vertical: "2.0m以下", note: "垂直は6m以下まで緩和される場合あり" },
-  { name: "ケーブルラック", horizontal: "2.0m以下", vertical: "2.0m以下", note: "水平部は等間隔、屈曲部直近も支持" },
-  { name: "がいし引き配線", horizontal: "2.0m以下", vertical: "2.0m以下", note: "電線相互の接近距離にも注意" },
-  { name: "ライティングダクト", horizontal: "2.0m以下", vertical: "—", note: "端部・接続部より0.3m以内で支持" },
-];
-
-// タップ下穴径（一般的なメートルねじ・並目）
-const TAP_HOLE_DATA = {
-  M4: 3.3, M5: 4.2, M6: 5.0, M8: 6.8, M10: 8.5, M12: 10.2,
-};
-
-// 配管ノックアウト（下穴）径 参考値 ※要メーカー確認
-const PIPE_HOLE_DATA = {
-  E管: { E19: 25, E25: 32, E31: 38, E39: 44, E51: 56 },
-  PF管: { PF16: 22, PF22: 29, PF28: 37, PF36: 45 },
-  G管: { G16: 22, G22: 28, G28: 35, G36: 43 },
-  プリカ: { PE16: 22, PE22: 28, PE28: 36 },
-};
-
-// 接続材（差込・T型コネクタ）選定：芯線サイズ範囲 → 適合サイズ 参考値
-const CONNECTOR_DATA = [
-  { range: "1.6mm 単線 〜 2.0mm 単線", size: "小（1.6-2.0用）" },
-  { range: "2.0mm 単線 〜 2.6mm 単線", size: "中（2.0-2.6用）" },
-  { range: "2.6mm 単線 〜 5.5mm² より線", size: "大（2.6-5.5用）" },
-  { range: "5.5mm² 〜 8mm² より線", size: "特大（5.5-8用）" },
-];
-
-// 電線の外径 参考値 ※ケーブル種別・メーカーにより差異あり、必ずカタログで確認
-// 電線の外径・断面寸法 参考値 ※ケーブル種別・メーカーにより差異あり、必ずカタログで確認
-// 丸形は数値(mm)、平形(VVF等)は {w, h}（幅mm×厚さmm）で指定
-const WIRE_DATA = {
-  // JIS C 3342:2012 表7(2心)・表8(3心)の実測値（出典：ハマネツ技術資料）
-  VVF: {
-    "1.6-2C": { w: 6.2, h: 9.4 },
-    "1.6-3C": { w: 6.2, h: 13.0 },
-    "2.0-2C": { w: 6.6, h: 10.5 },
-    "2.0-3C": { w: 6.6, h: 14.0 },
-    "2.6-2C": { w: 7.6, h: 12.5 },
-  },
-  // メーカー資料では「VVFと同サイズ・同仕上外径」と説明されているためVVFと同値を採用（要個別カタログ確認）
-  "EM-EEF": {
-    "1.6-2C": { w: 6.2, h: 9.4 },
-    "1.6-3C": { w: 6.2, h: 13.0 },
-    "2.0-2C": { w: 6.6, h: 10.5 },
-    "2.0-3C": { w: 6.6, h: 14.0 },
-    "2.6-2C": { w: 7.6, h: 12.5 },
-  },
-  ICT: { "0.5-1P": 4.0, "0.5-2P": 4.5, "0.65-1P": 4.2, "0.65-2P": 4.8 },
-  // 出典：施工管理の教科書「HPケーブルとは」掲載の仕上外径表
-  HP: {
-    "0.9-2C": { w: 3.7, h: 5.4 },
-    "0.9-3C": { w: 3.7, h: 7.1 },
-    "1.2-2C": { w: 4.0, h: 6.0 },
-    "1.2-3C": { w: 4.0, h: 8.0 },
-  },
-  IV: { "1.6mm": 2.8, "2.0mm": 3.4, "2.6mm": 4.0, "5.5sq": 5.0, "8sq": 5.6 },
-  "EM-IV": { "1.6mm": 2.8, "2.0mm": 3.4, "2.6mm": 4.0, "5.5sq": 5.0, "8sq": 5.6 },
-  // 出典：伸興電線 AE製品仕様（電材ストア等）の仕上外径。EM-AEは同社EM品も同径のため同値を採用（要個別確認）
-  AE: {
-    "0.65-2C": { w: 2.3, h: 3.3 },
-    "1.2-2C": { w: 3.0, h: 4.8 },
-    "1.2-3C": { w: 3.1, h: 6.5 },
-  },
-  "EM-AE": {
-    "0.65-2C": { w: 2.3, h: 3.3 },
-    "1.2-2C": { w: 3.0, h: 4.8 },
-    "1.2-3C": { w: 3.1, h: 6.5 },
-  },
-  "S-5C-FB": { "同軸1本": 7.4 },
-  "S-7C-FB": { "同軸1本": 10.3 },
-  "EM-S-5C-FB": { "同軸1本": 7.4 },
-  "EM-S-7C-FB": { "同軸1本": 10.3 },
-  "UTP0.5-4P(cat5e)": { "4P": 5.5 },
-  "UTP0.5-4P(cat6)": { "4P": 6.0 },
-  "UTP0.5-4P(cat6A)": { "4P": 7.8 },
-  "EM-UTP0.5-4P(cat5e)": { "4P": 5.3 },
-  "EM-UTP0.5-4P(cat6)": { "4P": 5.8 },
-  "EM-UTP0.5-4P(cat6A)": { "4P": 7.6 },
-};
-
-// 電線1本の断面積(mm²)。丸形はπ(d/2)²、平形は幅×厚さ
-const wireArea = (val) => (typeof val === "object" ? val.w * val.h : Math.PI * Math.pow(val / 2, 2));
-// 外径の表示文字列。丸形は「Xmm」、平形は「W×Hmm」
-const wireOuterLabel = (val) => (typeof val === "object" ? `${val.w}×${val.h}mm` : `${val}mm`);
-
-// 耐火処理工法 参考パターン ※実際の工法名・認定はメーカーカタログで確認
-const FIREPROOF_DATA = [
-  { wall: "RC造", location: "壁貫通", method: "耐火モルタル充填工法" },
-  { wall: "RC造", location: "床貫通", method: "耐火プレート＋モルタル工法" },
-  { wall: "ALC造", location: "壁貫通", method: "耐火パテ工法" },
-  { wall: "軽量鉄骨造（LGS）", location: "壁貫通", method: "耐火スリーブ＋耐火材工法" },
-  { wall: "軽量鉄骨造（LGS）", location: "床貫通", method: "耐火プレート工法" },
-  { wall: "木造", location: "壁貫通", method: "耐火パテ＋不燃材工法" },
-];
-
-const STANDARD_SIZES_MM2 = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240];
-
-// 等辺山形鋼（Lアングル）標準断面性能 出典：JIS G 3192（等辺山形鋼の標準断面寸法・断面積・単位質量・断面特性）
-// ※形状寸法の規格。材質はSS400（一般構造用圧延鋼材、JIS G 3101）を想定して以降の応力度計算を行う
-// A: 断面積(cm2), W: 単位質量(kg/m), Z: 断面係数 Zx=Zy(cm3)　出典：JIS G 3192規格値
-const ANGLE_STEEL_DATA = [
-  { size: "40×40×3", A: 2.336, W: 1.83, Z: 1.21, iv: 0.790 },
-  { size: "40×40×5", A: 3.755, W: 2.95, Z: 1.91, iv: 0.774 },
-  { size: "45×45×4", A: 3.492, W: 2.74, Z: 2.00, iv: 0.880 },
-  { size: "45×45×5", A: 4.302, W: 3.38, Z: 2.46, iv: 0.874 },
-  { size: "50×50×4", A: 3.892, W: 3.06, Z: 2.49, iv: 0.983 },
-  { size: "50×50×5", A: 4.802, W: 3.77, Z: 3.08, iv: 0.976 },
-  { size: "50×50×6", A: 5.644, W: 4.43, Z: 3.55, iv: 0.963 },
-  { size: "60×60×4", A: 4.692, W: 3.68, Z: 3.66, iv: 1.19 },
-  { size: "60×60×5", A: 5.802, W: 4.55, Z: 4.52, iv: 1.18 },
-  { size: "65×65×5", A: 6.367, W: 5.00, Z: 5.35, iv: 1.28 },
-  { size: "65×65×6", A: 7.527, W: 5.91, Z: 6.26, iv: 1.27 },
-  { size: "65×65×8", A: 9.761, W: 7.66, Z: 7.96, iv: 1.25 },
-  { size: "70×70×6", A: 8.127, W: 6.38, Z: 7.33, iv: 1.37 },
-  { size: "75×75×6", A: 8.727, W: 6.85, Z: 8.47, iv: 1.48 },
-  { size: "75×75×9", A: 12.69, W: 9.96, Z: 12.1, iv: 1.45 },
-  { size: "75×75×12", A: 16.56, W: 13.0, Z: 15.7, iv: 1.44 },
-  { size: "80×80×6", A: 9.327, W: 7.32, Z: 9.70, iv: 1.58 },
-  { size: "90×90×6", A: 10.55, W: 8.28, Z: 12.3, iv: 1.78 },
-  { size: "90×90×7", A: 12.22, W: 9.59, Z: 14.2, iv: 1.77 },
-  { size: "90×90×10", A: 17.00, W: 13.3, Z: 19.5, iv: 1.74 },
-  { size: "90×90×13", A: 21.71, W: 17.0, Z: 24.8, iv: 1.73 },
-  { size: "100×100×7", A: 13.62, W: 10.7, Z: 17.7, iv: 1.98 },
-  { size: "100×100×10", A: 19.00, W: 14.9, Z: 24.4, iv: 1.95 },
-  { size: "100×100×13", A: 24.31, W: 19.1, Z: 31.1, iv: 1.94 },
-  { size: "120×120×8", A: 18.76, W: 14.7, Z: 29.5, iv: 2.38 },
-  { size: "130×130×9", A: 22.74, W: 17.9, Z: 38.7, iv: 2.57 },
-  { size: "130×130×12", A: 29.76, W: 23.4, Z: 49.9, iv: 2.54 },
-  { size: "130×130×15", A: 36.75, W: 28.8, Z: 61.5, iv: 2.53 },
-  { size: "150×150×12", A: 34.77, W: 27.3, Z: 68.1, iv: 2.96 },
-  { size: "150×150×15", A: 42.74, W: 33.6, Z: 82.6, iv: 2.92 },
-  { size: "150×150×19", A: 53.38, W: 41.9, Z: 103, iv: 2.91 },
-  { size: "175×175×12", A: 40.52, W: 31.8, Z: 91.8, iv: 3.44 },
-  { size: "175×175×15", A: 50.21, W: 39.4, Z: 114, iv: 3.42 },
-  { size: "200×200×15", A: 57.75, W: 45.3, Z: 150, iv: 3.93 },
-  { size: "200×200×20", A: 76.00, W: 59.3, Z: 197, iv: 3.90 },
-  { size: "200×200×25", A: 93.75, W: 73.6, Z: 242, iv: 3.88 },
-];
-
-// 鋼材種別ごとの基準強度F（鋼構造許容応力度設計規準）。SS400はft=fb=156.7/235, fs=90.45/135.68（N/mm²）
-const MATERIAL_GRADES = [
-  { grade: "SS400", label: "SS400（一般構造用圧延鋼材・JIS G 3101、既定値）", F: 235 },
-  { grade: "SM490", label: "SM490（溶接構造用圧延鋼材・JIS G 3106、高強度）", F: 325 },
-];
-const STEEL_E = 205000; // N/mm²（ヤング係数、鋼材共通）
-const lambdaP = (F) => Math.PI * Math.sqrt(STEEL_E / (0.6 * F)); // Λ（限界細長比）
-const steelFt = (F) => ({ long: F / 1.5, short: F }); // 許容引張・曲げ応力度
-const steelFs = (F) => ({ long: F / (1.5 * Math.sqrt(3)), short: F / Math.sqrt(3) }); // 許容せん断応力度
-// 許容圧縮応力度fc（座屈を考慮、λ=細長比）
-const steelFc = (lambda, F) => {
-  const Lp = lambdaP(F);
-  const r = lambda / Lp;
-  let fcLong;
-  if (lambda <= Lp) {
-    const nu = 1.5 + 0.375 * r * r;
-    fcLong = ((1 - 0.4 * r * r) * F) / nu;
-  } else {
-    fcLong = (0.277 * F) / (r * r);
-  }
-  return { long: fcLong, short: fcLong * 1.5 };
-};
-
-// ステンレス鋼ボルト A2-50 の許容耐力(kN)　出典：建築設備耐震設計・施工指針2014年版の計算式（有効断面積×降伏点）による算出値
-const ANCHOR_BOLT_DATA = [
-  { size: "M10", Ta: 12.10, Qa: 7.00, sca: 0.580 },
-  { size: "M12", Ta: 17.70, Qa: 10.20, sca: 0.843 },
-  { size: "M16", Ta: 32.90, Qa: 19.00, sca: 1.570 },
-  { size: "M20", Ta: 51.40, Qa: 29.60, sca: 2.450 },
-];
-// ステンレス鋼ボルトA2-50の短期許容応力度（建築設備耐震設計・施工指針2014年版「ステンレス鋼ボルトの検討式」準拠）
-const BOLT_FT_SHORT = 210; // N/mm²（許容引張応力度 Sσy）
-const BOLT_FS_SHORT = 121.2; // N/mm²（許容せん断応力度 Sfs）
-
-// 設備機器の設計用標準震度 Kh（出典：建築設備耐震設計・施工指針2014年版、日本建築センター。
-// 建築設備耐震設計・施工指針2014年版の設計用標準震度に基づく）
-const SEISMIC_KH = {
-  S: { top: 2.0, mid: 1.5, low: 1.0 },
-  A: { top: 1.5, mid: 1.0, low: 0.6 },
-  B: { top: 1.0, mid: 0.6, low: 0.4 },
-};
-const FLOOR_LABEL = { top: "上層階・屋上・塔屋", mid: "中間階", low: "地階・1階" };
-const CLASS_LABEL = { S: "耐震クラスS（特に重要な設備）", A: "耐震クラスA（重要設備）", B: "耐震クラスB（一般設備）" };
-// ケーブルラック固有の耐震支持間隔（建築設備耐震設計・施工指針2014年版 指針表6.2-1相当。B種はA種と同値と仮定）
-const CABLE_RACK_SEISMIC_INTERVAL = {
-  S: { top: 6, mid: 8, low: 8 },
-  A: { top: 8, mid: 8, low: 12 },
-  B: { top: 8, mid: 8, low: 12 },
-};
-const recommendedInterval = (cls, floor) => CABLE_RACK_SEISMIC_INTERVAL[cls][floor];
-
-
+import {
+  CONDUIT_DATA, conduitInnerDiameter,
+  SUPPORT_INTERVAL_DATA,
+  TAP_HOLE_DATA, PIPE_HOLE_DATA,
+  CONNECTOR_DATA,
+  WIRE_DATA, wireArea, wireOuterLabel,
+  FIREPROOF_DATA,
+  STANDARD_WIRE_SIZES, wireSizeLabel,
+  ANGLE_STEEL_DATA,
+  MATERIAL_GRADES, STEEL_E, lambdaP, steelFt, steelFs, steelFc,
+  ANCHOR_BOLT_DATA, BOLT_FT_SHORT, BOLT_FS_SHORT,
+  SEISMIC_KH, FLOOR_LABEL, CLASS_LABEL, CABLE_RACK_SEISMIC_INTERVAL, recommendedInterval,
+} from "./data";
 
 /* ============================== UI 部品 ============================== */
 
@@ -660,7 +462,9 @@ function WiringCalcTool() {
   const k = phase === "single" ? 35.6 : 30.8;
   const e = (Number(voltage) * Number(dropPct)) / 100;
   const rawArea = e > 0 ? (k * Number(distance) * Number(current)) / (1000 * e) : 0;
-  const standardArea = STANDARD_SIZES_MM2.find((s) => s >= rawArea) ?? STANDARD_SIZES_MM2[STANDARD_SIZES_MM2.length - 1];
+  const standardItem =
+    STANDARD_WIRE_SIZES.find((s) => s.sq >= rawArea) ?? STANDARD_WIRE_SIZES[STANDARD_WIRE_SIZES.length - 1];
+  const standardArea = standardItem.sq;
   const actualDropV = (k * Number(distance) * Number(current)) / (1000 * standardArea);
   const actualDropPct = (actualDropV / Number(voltage)) * 100;
 
@@ -686,8 +490,8 @@ function WiringCalcTool() {
       </Field>
 
       <ResultCard accent="amber">
-        <ResultRow label="必要最小断面積（計算値）" value={rawArea.toFixed(2)} unit="mm²" />
-        <ResultRow label="採用サイズ（標準）" value={standardArea} unit="mm²" />
+        <ResultRow label="必要最小断面積（計算値）" value={rawArea.toFixed(2)} unit="sq" />
+        <ResultRow label="採用サイズ（標準）" value={wireSizeLabel(standardItem)} />
         <ResultRow label="採用時の電圧降下" value={actualDropV.toFixed(2)} unit={`V（${actualDropPct.toFixed(2)}%）`} />
       </ResultCard>
       <p className="text-xs text-slate-400 mt-3">内線規程の簡易電圧降下式（銅線）による概算です。許容電流・アース線・ボンド線サイズは別途規格表で確認してください。</p>
