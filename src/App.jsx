@@ -181,30 +181,65 @@ function ConnectorTool() {
 }
 
 function FireproofTool() {
-  const walls = [...new Set(FIREPROOF_DATA.map((d) => d.wall))];
-  const [wall, setWall] = useState(walls[0]);
-  const locs = FIREPROOF_DATA.filter((d) => d.wall === wall).map((d) => d.location);
-  const [loc, setLoc] = useState(locs[0]);
-  const curLocs = FIREPROOF_DATA.filter((d) => d.wall === wall).map((d) => d.location);
-  const match = FIREPROOF_DATA.find((d) => d.wall === wall && d.location === (curLocs.includes(loc) ? loc : curLocs[0]));
+  const categories = [...new Set(FIREPROOF_DATA.map((d) => d.category))];
+  const [category, setCategory] = useState(categories[0]);
+
+  const puttiesFor = (cat) => [...new Set(FIREPROOF_DATA.filter((d) => d.category === cat).map((d) => d.putty))];
+  const [putty, setPutty] = useState(puttiesFor(categories[0])[0]);
+
+  const wallsFor = (cat, p) => FIREPROOF_DATA.filter((d) => d.category === cat && d.putty === p).map((d) => d.wall);
+  const [wall, setWall] = useState(wallsFor(categories[0], puttiesFor(categories[0])[0])[0]);
+
+  const curPutties = puttiesFor(category);
+  const curPutty = curPutties.includes(putty) ? putty : curPutties[0];
+  const curWalls = wallsFor(category, curPutty);
+  const curWall = curWalls.includes(wall) ? wall : curWalls[0];
+  const match = FIREPROOF_DATA.find((d) => d.category === category && d.putty === curPutty && d.wall === curWall);
+
+  const onCategoryChange = (v) => {
+    setCategory(v);
+    const p = puttiesFor(v)[0];
+    setPutty(p);
+    setWall(wallsFor(v, p)[0]);
+  };
+  const onPuttyChange = (v) => {
+    setPutty(v);
+    setWall(wallsFor(category, v)[0]);
+  };
 
   return (
     <div>
-      <Field label="壁・床の種類">
-        <select className={selectCls} value={wall} onChange={(e) => { setWall(e.target.value); setLoc(FIREPROOF_DATA.filter((d) => d.wall === e.target.value)[0].location); }}>
-          {walls.map((w) => <option key={w} value={w}>{w}</option>)}
+      <Field label="区画種別">
+        <select className={selectCls} value={category} onChange={(e) => onCategoryChange(e.target.value)}>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </Field>
-      <Field label="施工箇所">
-        <select className={selectCls} value={loc} onChange={(e) => setLoc(e.target.value)}>
-          {curLocs.map((l) => <option key={l} value={l}>{l}</option>)}
+      <Field label="パテ種類">
+        <select className={selectCls} value={curPutty} onChange={(e) => onPuttyChange(e.target.value)}>
+          {curPutties.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
       </Field>
-      <ResultCard>
-        <ResultRow label="該当工法" value={match?.method ?? "—"} />
-      </ResultCard>
-      <p className="text-sm text-slate-400 mt-3">工法名・認定条件は日東化成／フィブロック等の最新カタログで必ず確認してください。</p>
-      <div className="mt-3"><RefBadge text="サンプルデータ・要カタログ確認" /></div>
+      <Field label={category === "共住区画" ? "用途" : "壁・床の種類"}>
+        <select className={selectCls} value={curWall} onChange={(e) => setWall(e.target.value)}>
+          {curWalls.map((w) => <option key={w} value={w}>{w}</option>)}
+        </select>
+      </Field>
+
+      {match && (
+        <ResultCard>
+          <ResultRow label="工法番号" value={match.methodNo} />
+          <ResultRow label="開口部" value={match.opening} />
+          <ResultRow label="ケーブル上限" value={match.cableMax} />
+          <ResultRow label="占積率上限" value={match.limit} unit="%" />
+        </ResultCard>
+      )}
+      {match?.conduitNote && (
+        <p className="text-xs text-slate-400 mt-3">合成樹脂製電線管等：{match.conduitNote}</p>
+      )}
+      <p className="text-sm text-slate-400 mt-3">
+        {category === "防火区画" ? "国土交通大臣認定工法" : "（一財）日本消防設備安全センター評定工法"}（建築基準法施行令129条の2の5 / 平成17年消防庁告示第4号）。詳細な施工条件は必ずカタログ・認定書原本でご確認ください。
+      </p>
+      <p className="text-xs text-amber-300 mt-2">※コンセント・スイッチボックス貫通の工法は占積率が多段階のため本ツールでは未収録です（別途カタログ確認）。</p>
     </div>
   );
 }
@@ -461,6 +496,21 @@ function PenetrationOccupancyTool() {
   const wireTypes = Object.keys(WIRE_DATA);
   const [cables, setCables] = useState([{ wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
 
+  // 貫通処理工法（任意）：選ぶとその工法の占積率上限を基準値として使用
+  const fpCategories = [...new Set(FIREPROOF_DATA.map((d) => d.category))];
+  const fpPuttiesFor = (cat) => [...new Set(FIREPROOF_DATA.filter((d) => d.category === cat).map((d) => d.putty))];
+  const fpWallsFor = (cat, p) => FIREPROOF_DATA.filter((d) => d.category === cat && d.putty === p).map((d) => d.wall);
+  const [useMethod, setUseMethod] = useState(false);
+  const [fpCategory, setFpCategory] = useState(fpCategories[0]);
+  const [fpPutty, setFpPutty] = useState(fpPuttiesFor(fpCategories[0])[0]);
+  const [fpWall, setFpWall] = useState(fpWallsFor(fpCategories[0], fpPuttiesFor(fpCategories[0])[0])[0]);
+  const fpCurPutties = fpPuttiesFor(fpCategory);
+  const fpCurPutty = fpCurPutties.includes(fpPutty) ? fpPutty : fpCurPutties[0];
+  const fpCurWalls = fpWallsFor(fpCategory, fpCurPutty);
+  const fpCurWall = fpCurWalls.includes(fpWall) ? fpWall : fpCurWalls[0];
+  const fpMatch = FIREPROOF_DATA.find((d) => d.category === fpCategory && d.putty === fpCurPutty && d.wall === fpCurWall);
+  const occupancyLimit = useMethod && fpMatch ? fpMatch.limit : PENETRATION_OCCUPANCY_LIMIT;
+
   const holeArea = Math.PI * Math.pow(holeSize / 2, 2);
 
   const updateCable = (i, key, val) => {
@@ -477,14 +527,14 @@ function PenetrationOccupancyTool() {
     return sum + (val !== undefined ? wireArea(val) : 0) * Number(c.count || 0);
   }, 0);
   const rate = holeArea > 0 ? (cableArea / holeArea) * 100 : 0;
-  const ok = rate <= PENETRATION_OCCUPANCY_LIMIT;
+  const ok = rate <= occupancyLimit;
 
   // NG時：合格基準を満たす近似上位サイズを提案
   const recommendedHole = (() => {
     for (const d of PENETRATION_HOLE_SIZES) {
       const area = Math.PI * Math.pow(d / 2, 2);
       const r = area > 0 ? (cableArea / area) * 100 : Infinity;
-      if (r <= PENETRATION_OCCUPANCY_LIMIT) return { size: d, rate: r };
+      if (r <= occupancyLimit) return { size: d, rate: r };
     }
     return null;
   })();
@@ -499,6 +549,47 @@ function PenetrationOccupancyTool() {
       <p className="text-xs text-slate-400 mb-4">
         参考断面積：<span className="font-semibold text-slate-200">{holeArea.toFixed(0)}mm²</span>（直径{holeSize}mmの円として算出）
       </p>
+
+      <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+        <input type="checkbox" checked={useMethod} onChange={(e) => setUseMethod(e.target.checked)} className="w-4 h-4" />
+        <span className="text-sm text-slate-300">耐火処理工法を指定して合格基準を連動させる（未指定なら暫定{PENETRATION_OCCUPANCY_LIMIT}%）</span>
+      </label>
+
+      {useMethod && (
+        <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 mb-4">
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <select
+              className={`${selectCls} text-sm`}
+              value={fpCategory}
+              onChange={(e) => {
+                const v = e.target.value;
+                setFpCategory(v);
+                const p = fpPuttiesFor(v)[0];
+                setFpPutty(p);
+                setFpWall(fpWallsFor(v, p)[0]);
+              }}
+            >
+              {fpCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select
+              className={`${selectCls} text-sm`}
+              value={fpCurPutty}
+              onChange={(e) => { setFpPutty(e.target.value); setFpWall(fpWallsFor(fpCategory, e.target.value)[0]); }}
+            >
+              {fpCurPutties.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select className={`${selectCls} text-sm`} value={fpCurWall} onChange={(e) => setFpWall(e.target.value)}>
+              {fpCurWalls.map((w) => <option key={w} value={w}>{w}</option>)}
+            </select>
+          </div>
+          {fpMatch && (
+            <p className="text-xs text-slate-400">
+              {fpMatch.methodNo}　開口部：{fpMatch.opening}　占積率上限：
+              <span className="font-semibold text-slate-200">{fpMatch.limit}%</span>
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="mb-2">
         <span className="block text-sm font-medium text-slate-300 mb-1.5">通すケーブル</span>
@@ -560,7 +651,8 @@ function PenetrationOccupancyTool() {
       <ResultCard accent={ok ? "blue" : "amber"}>
         <ResultRow label="ケーブル断面積合計" value={cableArea.toFixed(0)} unit="mm²" />
         <ResultRow label="占積率" value={rate.toFixed(2)} unit="%" />
-        <ResultRow label="合格基準（暫定）" value={`${PENETRATION_OCCUPANCY_LIMIT}%以内`} />
+        <ResultRow label="合格基準" value={`${occupancyLimit}%以内`} />
+        <ResultRow label="基準の出所" value={useMethod && fpMatch ? `${fpMatch.methodNo}` : "暫定値"} />
         <ResultRow label="判定" value={ok ? "OK（基準内）" : "NG（超過）"} />
       </ResultCard>
 
@@ -580,7 +672,8 @@ function PenetrationOccupancyTool() {
         </div>
       )}
       <p className="text-xs text-slate-400 mt-3">
-        計算式：（ケーブル断面積合計 ÷ 貫通穴断面積）×100。ケーブル外径はWIRE_DATA（CV/CVT等）の参考値です。合格基準48%は暫定値のため、実際の適用にあたっては設計者・施工管理者の確認をお願いします。
+        計算式：（ケーブル断面積合計 ÷ 貫通穴断面積）×100。ケーブル外径はWIRE_DATA（CV/CVT等）の参考値です。
+        耐火処理工法を指定しない場合の合格基準48%は暫定値です。工法を指定した場合は日東化成カタログ記載の占積率上限を採用していますが、実際の適用にあたっては設計者・施工管理者の確認をお願いします。
       </p>
     </div>
   );
