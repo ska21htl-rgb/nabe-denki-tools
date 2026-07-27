@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useCallback, useEffect } from "react"
 import {
   Search, Calculator, ChevronLeft, Ruler, Layers, CircleDot, Link2, Flame,
   Zap, Grid3x3, Boxes, PieChart, Plug, AlertTriangle, Plus, Trash2,
-  ShieldCheck, Printer, FileText, ArrowLeft
+  ShieldCheck, Printer, FileText, ArrowLeft, Target
 } from "lucide-react";
 import {
   CONDUIT_DATA, conduitInnerDiameter,
@@ -448,6 +448,140 @@ function OccupancyTool() {
           <p className="text-sm text-amber-300">{pipeType}の既存サイズでは規定を満たせません。配管種類を変えるか、電線本数を見直してください。</p>
         )}
       </div>
+    </div>
+  );
+}
+
+// 貫通穴サイズ系列（mm、直径） 10〜150を5mm刻み
+const PENETRATION_HOLE_SIZES = Array.from({ length: 29 }, (_, i) => 10 + i * 5);
+const PENETRATION_OCCUPANCY_LIMIT = 48; // 合格基準（暫定）：48%以内
+
+function PenetrationOccupancyTool() {
+  const [holeSize, setHoleSize] = useState(50);
+  const wireTypes = Object.keys(WIRE_DATA);
+  const [cables, setCables] = useState([{ wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
+
+  const holeArea = Math.PI * Math.pow(holeSize / 2, 2);
+
+  const updateCable = (i, key, val) => {
+    const next = [...cables];
+    next[i] = { ...next[i], [key]: val };
+    if (key === "wireType") next[i].spec = Object.keys(WIRE_DATA[val])[0];
+    setCables(next);
+  };
+  const addCable = () => setCables([...cables, { wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
+  const removeCable = (i) => setCables(cables.filter((_, idx) => idx !== i));
+
+  const cableArea = cables.reduce((sum, c) => {
+    const val = WIRE_DATA[c.wireType]?.[c.spec];
+    return sum + (val !== undefined ? wireArea(val) : 0) * Number(c.count || 0);
+  }, 0);
+  const rate = holeArea > 0 ? (cableArea / holeArea) * 100 : 0;
+  const ok = rate <= PENETRATION_OCCUPANCY_LIMIT;
+
+  // NG時：合格基準を満たす近似上位サイズを提案
+  const recommendedHole = (() => {
+    for (const d of PENETRATION_HOLE_SIZES) {
+      const area = Math.PI * Math.pow(d / 2, 2);
+      const r = area > 0 ? (cableArea / area) * 100 : Infinity;
+      if (r <= PENETRATION_OCCUPANCY_LIMIT) return { size: d, rate: r };
+    }
+    return null;
+  })();
+
+  return (
+    <div>
+      <Field label="貫通穴径（直径）">
+        <select className={selectCls} value={holeSize} onChange={(e) => setHoleSize(Number(e.target.value))}>
+          {PENETRATION_HOLE_SIZES.map((d) => <option key={d} value={d}>{d}mm</option>)}
+        </select>
+      </Field>
+      <p className="text-xs text-slate-400 mb-4">
+        参考断面積：<span className="font-semibold text-slate-200">{holeArea.toFixed(0)}mm²</span>（直径{holeSize}mmの円として算出）
+      </p>
+
+      <div className="mb-2">
+        <span className="block text-sm font-medium text-slate-300 mb-1.5">通すケーブル</span>
+        <div className="flex gap-2 mb-1 px-0.5">
+          <span className="text-xs text-slate-400" style={{ flex: "0 0 40%" }}>線種</span>
+          <span className="text-xs text-slate-400" style={{ flex: "0 0 40%" }}>芯数/サイズ</span>
+          <span className="text-xs text-slate-400" style={{ flex: "0 0 20%" }}>本数</span>
+          <span className="w-9 shrink-0" />
+        </div>
+        {cables.map((c, i) => {
+          const specs = Object.keys(WIRE_DATA[c.wireType]);
+          const curSpec = specs.includes(c.spec) ? c.spec : specs[0];
+          const wireVal = WIRE_DATA[c.wireType][curSpec];
+          return (
+            <div key={i} className="mb-3">
+              <div className="flex gap-2 items-center">
+                <select
+                  className={`${selectCls} min-w-0`}
+                  style={{ flex: "0 0 40%" }}
+                  value={c.wireType}
+                  onChange={(e) => updateCable(i, "wireType", e.target.value)}
+                >
+                  {wireTypes.map((w) => <option key={w} value={w}>{w}</option>)}
+                </select>
+                <select
+                  className={`${selectCls} min-w-0`}
+                  style={{ flex: "0 0 40%" }}
+                  value={curSpec}
+                  onChange={(e) => updateCable(i, "spec", e.target.value)}
+                >
+                  {specs.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  max="99"
+                  className={`${inputCls} min-w-0 px-2 text-center`}
+                  style={{ flex: "0 0 20%" }}
+                  value={c.count}
+                  onChange={(e) => updateCable(i, "count", e.target.value)}
+                />
+                <button onClick={() => removeCable(i)} className="p-2.5 rounded-lg bg-slate-800 border border-slate-600 text-slate-400 hover:text-red-400 shrink-0 w-9" aria-label="削除">
+                  <Trash2 size={18} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                参考外径：<span className="font-semibold text-slate-200">{wireOuterLabel(wireVal)}</span>
+                <span className="mx-1.5 text-slate-600">|</span>
+                断面積：<span className="font-semibold text-slate-200">{wireArea(wireVal).toFixed(2)}mm²</span>
+              </p>
+            </div>
+          );
+        })}
+        <button onClick={addCable} className="flex items-center gap-1.5 text-sm font-medium text-blue-400 mt-1">
+          <Plus size={16} /> ケーブルを追加
+        </button>
+      </div>
+
+      <ResultCard accent={ok ? "blue" : "amber"}>
+        <ResultRow label="ケーブル断面積合計" value={cableArea.toFixed(0)} unit="mm²" />
+        <ResultRow label="占積率" value={rate.toFixed(2)} unit="%" />
+        <ResultRow label="合格基準（暫定）" value={`${PENETRATION_OCCUPANCY_LIMIT}%以内`} />
+        <ResultRow label="判定" value={ok ? "OK（基準内）" : "NG（超過）"} />
+      </ResultCard>
+
+      {!ok && (
+        <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 mt-3">
+          <span className="block text-sm font-medium text-slate-300 mb-1.5">推奨貫通穴径</span>
+          {recommendedHole ? (
+            <p className="text-lg font-bold text-slate-50">
+              φ{recommendedHole.size}mm
+              <span className="text-sm font-normal text-slate-400 ml-2">
+                占積率 {recommendedHole.rate.toFixed(1)}%
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm text-amber-300">150mm以内では基準を満たせません。ケーブル本数・サイズを見直してください。</p>
+          )}
+        </div>
+      )}
+      <p className="text-xs text-slate-400 mt-3">
+        計算式：（ケーブル断面積合計 ÷ 貫通穴断面積）×100。ケーブル外径はWIRE_DATA（CV/CVT等）の参考値です。合格基準48%は暫定値のため、実際の適用にあたっては設計者・施工管理者の確認をお願いします。
+      </p>
     </div>
   );
 }
@@ -1214,7 +1348,8 @@ const TOOLS = {
     { id: "pipe-takeoff", name: "金属管拾い出しツール", desc: "距離とサイズから必要材料を算出", icon: Zap, Comp: PipeTakeoffTool },
     { id: "cable-rack", name: "ケーブルラック材料計算", desc: "ルートと支持間隔から必要材料を算出", icon: Grid3x3, Comp: CableRackTool },
     { id: "partition", name: "間仕切り仕込み材計算", desc: "配管長と器具数から仕込み材を算出", icon: Boxes, Comp: PartitionPrepTool },
-    { id: "occupancy", name: "占積率計算ツール", desc: "配管に入るケーブル本数を判定", icon: PieChart, Comp: OccupancyTool },
+    { id: "occupancy", name: "配管サイズ計算ツール", desc: "配管に入るケーブル本数を判定", icon: PieChart, Comp: OccupancyTool },
+    { id: "penetration-occupancy", name: "占積率計算ツール", desc: "貫通穴に対するケーブルの占積率を判定", icon: Target, Comp: PenetrationOccupancyTool },
     { id: "wiring", name: "電気配線計算ツール", desc: "電圧降下・幹線サイズをまとめて計算", icon: Plug, Comp: WiringCalcTool },
     { id: "rack-seismic", name: "ラック耐震支持計算", desc: "耐震クラス・設置階から地震力を判定し計算書を作成", icon: ShieldCheck, Comp: RackSeismicTool },
   ],
