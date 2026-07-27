@@ -123,7 +123,7 @@ const STANDARD_SIZES_MM2 = [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150
 
 // 等辺山形鋼（Lアングル）標準断面性能 出典：JIS G 3192（等辺山形鋼の標準断面寸法・断面積・単位質量・断面特性）
 // ※形状寸法の規格。材質はSS400（一般構造用圧延鋼材、JIS G 3101）を想定して以降の応力度計算を行う
-// A: 断面積(cm2), W: 単位質量(kg/m), Z: 断面係数 Zx=Zy(cm3)　※検討書のL-50x50x6実測値(5.644cm2)と一致確認済み
+// A: 断面積(cm2), W: 単位質量(kg/m), Z: 断面係数 Zx=Zy(cm3)　出典：JIS G 3192規格値
 const ANGLE_STEEL_DATA = [
   { size: "40×40×3", A: 2.336, W: 1.83, Z: 1.21, iv: 0.790 },
   { size: "40×40×5", A: 3.755, W: 2.95, Z: 1.91, iv: 0.774 },
@@ -163,7 +163,7 @@ const ANGLE_STEEL_DATA = [
   { size: "200×200×25", A: 93.75, W: 73.6, Z: 242, iv: 3.88 },
 ];
 
-// 鋼材種別ごとの基準強度F（鋼構造許容応力度設計規準）。SS400は実際の検討書掲載値と一致確認済み（ft=fb=156.7/235, fs=90.45/135.68）
+// 鋼材種別ごとの基準強度F（鋼構造許容応力度設計規準）。SS400はft=fb=156.7/235, fs=90.45/135.68（N/mm²）
 const MATERIAL_GRADES = [
   { grade: "SS400", label: "SS400（一般構造用圧延鋼材・JIS G 3101、既定値）", F: 235 },
   { grade: "SM490", label: "SM490（溶接構造用圧延鋼材・JIS G 3106、高強度）", F: 325 },
@@ -186,19 +186,19 @@ const steelFc = (lambda, F) => {
   return { long: fcLong, short: fcLong * 1.5 };
 };
 
-// ステンレス鋼ボルト A2-50 の許容耐力(kN)　出典：アップロードされた実際の検討書「6.7ｂ）ステンレス鋼ボルトの耐力」掲載値と一致
+// ステンレス鋼ボルト A2-50 の許容耐力(kN)　出典：建築設備耐震設計・施工指針2014年版の計算式（有効断面積×降伏点）による算出値
 const ANCHOR_BOLT_DATA = [
   { size: "M10", Ta: 12.10, Qa: 7.00, sca: 0.580 },
   { size: "M12", Ta: 17.70, Qa: 10.20, sca: 0.843 },
   { size: "M16", Ta: 32.90, Qa: 19.00, sca: 1.570 },
   { size: "M20", Ta: 51.40, Qa: 29.60, sca: 2.450 },
 ];
-// ステンレス鋼ボルトA2-50の短期許容応力度（検討書P.5「ｃ）ステンレス鋼ボルトの検討式」準拠）
+// ステンレス鋼ボルトA2-50の短期許容応力度（建築設備耐震設計・施工指針2014年版「ステンレス鋼ボルトの検討式」準拠）
 const BOLT_FT_SHORT = 210; // N/mm²（許容引張応力度 Sσy）
 const BOLT_FS_SHORT = 121.2; // N/mm²（許容せん断応力度 Sfs）
 
 // 設備機器の設計用標準震度 Kh（出典：建築設備耐震設計・施工指針2014年版、日本建築センター。
-// 実際の「ケーブルラック架台耐震支持検討書」記載値と一致確認済み）
+// 建築設備耐震設計・施工指針2014年版の設計用標準震度に基づく）
 const SEISMIC_KH = {
   S: { top: 2.0, mid: 1.5, low: 1.0 },
   A: { top: 1.5, mid: 1.0, low: 0.6 },
@@ -206,7 +206,7 @@ const SEISMIC_KH = {
 };
 const FLOOR_LABEL = { top: "上層階・屋上・塔屋", mid: "中間階", low: "地階・1階" };
 const CLASS_LABEL = { S: "耐震クラスS（特に重要な設備）", A: "耐震クラスA（重要設備）", B: "耐震クラスB（一般設備）" };
-// ケーブルラック固有の耐震支持間隔（指針表6.2-1相当。実際の検討書掲載値に基づく。B種はA種と同値と仮定）
+// ケーブルラック固有の耐震支持間隔（建築設備耐震設計・施工指針2014年版 指針表6.2-1相当。B種はA種と同値と仮定）
 const CABLE_RACK_SEISMIC_INTERVAL = {
   S: { top: 6, mid: 8, low: 8 },
   A: { top: 8, mid: 8, low: 12 },
@@ -717,6 +717,9 @@ function RackSeismicTool() {
   const [boltSize, setBoltSize] = useState("M12");
   const [boltsPerLeg, setBoltsPerLeg] = useState(2);
   const [boltSpacing, setBoltSpacing] = useState(150); // アンカーボルト間隔(mm)＝引張力の腕
+  const [plateBc, setPlateBc] = useState(100); // 圧縮側の負担幅(mm)
+  const [plateL, setPlateL] = useState(40); // 圧縮側の片持ち長さ(mm)
+  const [plateEdge, setPlateEdge] = useState(20); // 引張側：縁端からボルト中心までの長さℓ(mm)
 
   const khTable = SEISMIC_KH[cls][floor];
   const kh = khOverride !== "" ? Number(khOverride) : khTable;
@@ -775,6 +778,30 @@ function RackSeismicTool() {
   const fts = Math.min(BOLT_FT_SHORT, 1.4 * BOLT_FT_SHORT - 1.6 * tau);
   const ftsRatio = sigmaT / Math.min(BOLT_FT_SHORT, fts);
   const anchorJudge = qRatio <= 1.0 && tRatio <= 1.0 && ftsRatio <= 1.0 ? "OK" : "NG";
+
+  // --- 取付部板厚の検討（アングルのフランジ／ガセットプレートのボルト周り局所曲げ） -------
+  // 出典：建築設備耐震設計・施工指針2014年版／鋼構造許容応力度設計規準（架台取付部板厚の検討式）
+  const angleParts = selectedAngle.size.split("×").map(Number); // [D, D, t]
+  const plateD = angleParts[0]; // 鋼材の幅(mm)
+  const plateT = angleParts[2]; // 板厚(mm)＝アングルの厚み
+  const boltPhi = Number(boltSize.replace("M", "")); // ボルト径(mm)
+  // 面外曲げの許容応力度 fb1（指針準拠：F/1.3、短期は長期の1.5倍）
+  const fb1Long = matF / 1.3;
+  const fb1Short = fb1Long * 1.5;
+  // 圧縮側：分布圧力による片持ちモデル（C=T_perBoltを圧縮側力の目安として使用）
+  const plateA_mm2 = Number(plateBc || 1) * plateD;
+  const sigmaC_plate = (T_perBolt_kN * 1000) / plateA_mm2; // N/mm²
+  const mComp_Nmm = (sigmaC_plate * Number(plateL || 0) * Number(plateL || 0)) / 2;
+  const zComp = (plateT * plateT) / 6; // mm²（単位幅あたり）
+  const sigmaBComp = mComp_Nmm / zComp; // N/mm²
+  // 引張側：集中荷重による片持ちモデル
+  const btWidth = 2 * Number(plateEdge || 0) + (boltPhi + 2);
+  const mTens_Nmm = T_perBolt_kN * 1000 * Number(plateEdge || 0);
+  const zTens = (btWidth * plateT * plateT) / 6; // mm³
+  const sigmaBTens = mTens_Nmm / zTens; // N/mm²
+  const plateCompRatio = sigmaBComp / fb1Short;
+  const plateTensRatio = sigmaBTens / fb1Short;
+  const plateJudge = plateCompRatio <= 1.0 && plateTensRatio <= 1.0 ? "OK" : "NG";
 
   if (showReport) {
     return (
@@ -982,6 +1009,44 @@ function RackSeismicTool() {
             検定値　Q/Qa = {qRatio.toFixed(3)}　T/Ta = {tRatio.toFixed(3)}　σt/fts = {ftsRatio.toFixed(3)}　
             <span className={`font-bold ml-1 ${anchorJudge === "OK" ? "text-blue-700" : "text-red-600"}`}>判定：{anchorJudge}（すべて≦1.0でOK）</span>
           </p>
+
+          <h2 className="font-bold text-sm border-b-2 border-slate-800 pb-1 mb-2">7. 取付部板厚の検討（アングル脚部＝フランジの局所曲げ）</h2>
+          <p className="text-xs text-slate-500 mb-2">
+            対象：L-{selectedAngle.size}の脚（フランジ）厚み t={plateT}mm。アンカーボルトの引張り・圧縮力による局所曲げの検討です。
+          </p>
+          <p className="text-sm font-mono bg-slate-100 border border-slate-300 rounded px-3 py-2 mb-2">
+            判定式：σb ＝ M／Z ≦ fb1
+            <span className="block text-[11px] text-slate-500 font-sans mt-1">
+              出典：建築設備耐震設計・施工指針2014年版／鋼構造許容応力度設計規準（架台取付部板厚の検討式）
+            </span>
+          </p>
+          <table className="w-full text-sm mb-2">
+            <tbody>
+              <tr className="border-b border-slate-200"><td className="py-1 text-slate-500 w-52">板厚 t（アングルより）</td><td className="py-1">{plateT} mm</td></tr>
+              <tr className="border-b border-slate-200"><td className="py-1 text-slate-500">圧縮側：負担幅Bc／片持ち長さL</td><td className="py-1">{plateBc} mm ／ {plateL} mm</td></tr>
+              <tr><td className="py-1 text-slate-500">引張側：縁端長さℓ／ボルト径φ</td><td className="py-1">{plateEdge} mm ／ {boltPhi} mm</td></tr>
+            </tbody>
+          </table>
+          <table className="w-full text-sm mb-2 font-mono text-[13px]">
+            <tbody>
+              <tr className="border-b border-slate-200">
+                <td className="py-1 text-slate-500 w-52 font-sans">圧縮側（分布圧力・片持ち）</td>
+                <td className="py-1">σc=C/(Bc×D)={sigmaC_plate.toFixed(2)}N/mm²　M=σc×L²/2　σb={sigmaBComp.toFixed(1)}N/mm²</td>
+              </tr>
+              <tr className="border-b border-slate-200">
+                <td className="py-1 text-slate-500 font-sans">引張側（集中荷重・片持ち）</td>
+                <td className="py-1">Bt=2ℓ+(φ+2)={btWidth.toFixed(0)}mm　M=T×ℓ　σb={sigmaBTens.toFixed(1)}N/mm²</td>
+              </tr>
+              <tr>
+                <td className="py-1 text-slate-500 font-sans">許容面外曲げ応力度（短期）</td>
+                <td className="py-1">fb1 = F/1.3×1.5 = {fb1Short.toFixed(1)} N/mm²</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="text-sm mb-6">
+            検定値　圧縮側 σb/fb1 = {plateCompRatio.toFixed(3)}　引張側 σb/fb1 = {plateTensRatio.toFixed(3)}　
+            <span className={`font-bold ml-1 ${plateJudge === "OK" ? "text-blue-700" : "text-red-600"}`}>判定：{plateJudge}（両方≦1.0でOK）</span>
+          </p>
             </>
           )}
 
@@ -1001,6 +1066,12 @@ function RackSeismicTool() {
                       Ta・Qaの数値はJIS表の直接記載値ではなく、「有効断面積×降伏点（短期σy=210N/mm²）」の計算式（建築設備耐震設計・施工指針2014年版準拠）による算出値です。
                     </td>
                   </tr>
+                  <tr>
+                    <td className="py-1.5 text-slate-500 align-top">取付部板厚の検討式<br />（σb=M/Z、fb1）</td>
+                    <td className="py-1.5">
+                      建築設備耐震設計・施工指針2014年版／鋼構造許容応力度設計規準（架台取付部板厚の検討式）。fb1（許容面外曲げ応力度）はF/1.3（長期）を基準とする値です。
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -1009,7 +1080,7 @@ function RackSeismicTool() {
           <p className="text-[11px] text-slate-500 border-t border-slate-300 pt-3">
             {bracketType === "product"
               ? "※既製品ブラケットのカタログ許容耐力との比較のみです。取付部の詳細な検討はメーカー資料に基づき別途確認してください。"
-              : "※吊り材・アンカーボルトの検定は簡易モデルによるものです（引張・せん断同時作用の低減fts式は含む）。取付部板厚の検討、3次元架構の応力解析は含まれていません。"}
+              : "※吊り材・アンカーボルト・取付部板厚の検定は簡易モデルによるものです（fts式含む）。3次元架構の応力解析は含まれていません。"}
           </p>
 
           <button
@@ -1198,6 +1269,105 @@ function RackSeismicTool() {
           曲げモーメントをボルト間隔で除した偶力としてTを、水平力をボルト本数で除してQを簡易算定。引張とせん断の同時作用による低減（fts式）を含めて判定しています。
         </p>
       </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="圧縮側 負担幅 Bc (mm)">
+          <input type="number" step="5" className={inputCls} value={plateBc} onChange={(e) => setPlateBc(e.target.value)} />
+        </Field>
+        <Field label="圧縮側 片持ち長さ L (mm)">
+          <input type="number" step="5" className={inputCls} value={plateL} onChange={(e) => setPlateL(e.target.value)} />
+        </Field>
+        <Field label="引張側 縁端長さ ℓ (mm)">
+          <input type="number" step="5" className={inputCls} value={plateEdge} onChange={(e) => setPlateEdge(e.target.value)} />
+        </Field>
+      </div>
+
+      <div className={`rounded-xl border p-4 mb-4 ${plateJudge === "OK" ? "border-blue-500/40 bg-blue-500/10" : "border-red-500/40 bg-red-500/10"}`}>
+        <span className="block text-sm font-medium text-slate-300 mb-1">
+          取付部板厚の検討（アングル脚部＝フランジの局所曲げ）
+        </span>
+        <p className="text-xs text-slate-400 mb-3">
+          対象は選択中のL-{selectedAngle.size}の<b className="text-slate-200">「{plateT}」の部分（脚の厚みt＝{plateT}mm）</b>です。
+          スラブにボルト留めするアングルの脚（フランジ）が、ボルトの引張り・圧縮力で局所的にめくれるように曲がらないかを見ています。
+        </p>
+
+        <svg viewBox="0 0 320 190" className="w-full max-w-xs mx-auto mb-3">
+          <rect x="20" y="10" width="280" height="18" fill="#475569" />
+          <text x="160" y="23" textAnchor="middle" fontSize="10" fill="#e2e8f0">スラブ</text>
+
+          <rect x="90" y="28" width="140" height="12" fill="#f59e0b" opacity="0.85" />
+          <text x="20" y="37" fontSize="9" fill="#fbbf24" textAnchor="start">t（板厚）</text>
+          <line x1="55" y1="34" x2="88" y2="34" stroke="#fbbf24" strokeWidth="1" />
+
+          <line x1="160" y1="10" x2="160" y2="40" stroke="#94a3b8" strokeWidth="3" />
+          <circle cx="160" cy="12" r="4" fill="#94a3b8" />
+          <text x="230" y="20" fontSize="9" fill="#94a3b8">アンカーボルト</text>
+          <line x1="200" y1="18" x2="164" y2="18" stroke="#94a3b8" strokeWidth="1" />
+
+          <rect x="148" y="40" width="16" height="95" fill="#64748b" />
+          <text x="230" y="90" fontSize="9" fill="#94a3b8">吊り材（アングル本体）</text>
+          <line x1="228" y1="86" x2="166" y2="80" stroke="#94a3b8" strokeWidth="1" />
+
+          <text x="90" y="185" fontSize="8" fill="#64748b">フランジ（アングルの脚）＝ここの局所曲げを検討</text>
+        </svg>
+
+        <p className="text-[11px] text-slate-500 text-center mb-1">フランジを上から見た図（平面図・ボルト直列2点の場合の例）</p>
+        <svg viewBox="0 0 280 170" className="w-full max-w-xs mx-auto mb-3">
+          {/* 固定端（アングル本体側） */}
+          <line x1="40" y1="15" x2="40" y2="135" stroke="#e2e8f0" strokeWidth="3" />
+          <text x="20" y="80" fontSize="9" fill="#e2e8f0" textAnchor="middle" transform="rotate(-90 20 80)">固定端（アングル本体）</text>
+
+          {/* フランジ板（平面） */}
+          <rect x="40" y="15" width="180" height="120" fill="none" stroke="#f59e0b" strokeWidth="1.5" opacity="0.85" />
+
+          {/* ボルト穴×2（固定端から見て手前・奥に直列） */}
+          <circle cx="90" cy="75" r="6" fill="none" stroke="#94a3b8" strokeWidth="1.5" />
+          <circle cx="170" cy="75" r="6" fill="none" stroke="#94a3b8" strokeWidth="1.5" />
+          <text x="130" y="95" fontSize="8" fill="#94a3b8" textAnchor="middle">ボルト×2（直列）</text>
+
+          {/* ℓ1：固定端〜手前ボルト */}
+          <line x1="40" y1="30" x2="90" y2="30" stroke="#38bdf8" strokeWidth="1" strokeDasharray="2,2" />
+          <text x="65" y="25" fontSize="8" fill="#38bdf8" textAnchor="middle">ℓ1</text>
+
+          {/* ℓ2：固定端〜奥ボルト（こちらを検討に採用＝安全側） */}
+          <line x1="40" y1="45" x2="170" y2="45" stroke="#38bdf8" strokeWidth="1.5" />
+          <text x="105" y="40" fontSize="9" fill="#38bdf8" textAnchor="middle">ℓ2（＝ℓ、こちらを採用）</text>
+
+          {/* L：固定端〜プレート外縁（圧縮側 片持ち長さ） */}
+          <line x1="40" y1="150" x2="220" y2="150" stroke="#fbbf24" strokeWidth="1" />
+          <line x1="40" y1="145" x2="40" y2="155" stroke="#fbbf24" strokeWidth="1" />
+          <line x1="220" y1="145" x2="220" y2="155" stroke="#fbbf24" strokeWidth="1" />
+          <text x="130" y="165" fontSize="9" fill="#fbbf24" textAnchor="middle">L（圧縮側 片持ち長さ）</text>
+
+          {/* Bc：プレート全幅（直列の場合は幅を分けない） */}
+          <line x1="235" y1="15" x2="235" y2="135" stroke="#a78bfa" strokeWidth="1" />
+          <line x1="230" y1="15" x2="240" y2="15" stroke="#a78bfa" strokeWidth="1" />
+          <line x1="230" y1="135" x2="240" y2="135" stroke="#a78bfa" strokeWidth="1" />
+          <text x="255" y="78" fontSize="9" fill="#a78bfa" textAnchor="middle" transform="rotate(-90 255 78)">Bc（全幅）</text>
+        </svg>
+        <p className="text-[11px] text-slate-500 mb-3">
+          <b className="text-slate-300">直列（縦に2穴）の場合</b>：横方向には1本しかないため Bc＝フランジ全幅を入力してください（幅を分けません）。
+          ℓは手前・奥のボルトで値が異なりますが、固定端から遠い方（ℓ2）の方が曲げの腕が長く厳しい条件になるため、
+          <b className="text-slate-300">ℓ2（奥のボルト）の値を安全側として採用</b>してください。
+        </p>
+
+        <div className="rounded-lg bg-slate-900/60 border border-slate-700 px-3 py-2 mb-3 font-mono text-sm text-slate-200">
+          σb = M / Z ≦ fb1
+          <div className="text-[11px] text-slate-500 font-sans mt-1">
+            出典：建築設備耐震設計・施工指針2014年版／鋼構造許容応力度設計規準（架台取付部板厚の検討式）
+          </div>
+        </div>
+        <ResultRow label="板厚 t（アングルより）" value={plateT} unit="mm" />
+        <ResultRow label="許容面外曲げ応力度 fb1（短期）" value={fb1Short.toFixed(1)} unit="N/mm²" />
+        <ResultRow label="圧縮側 曲げ応力度 σb" value={sigmaBComp.toFixed(1)} unit="N/mm²" />
+        <ResultRow label="圧縮側 検定値 σb/fb1" value={plateCompRatio.toFixed(3)} />
+        <ResultRow label="引張側 曲げ応力度 σb" value={sigmaBTens.toFixed(1)} unit="N/mm²" />
+        <ResultRow label="引張側 検定値 σb/fb1" value={plateTensRatio.toFixed(3)} />
+        <ResultRow label="判定（両方≦1.0でOK）" value={plateJudge} />
+        <p className="text-xs text-slate-400 mt-2">
+          圧縮側は分布圧力による片持ちモデル、引張側はボルト位置の集中荷重による片持ちモデルで簡易算定しています。
+        </p>
+      </div>
         </>
       )}
 
@@ -1219,8 +1389,8 @@ function RackSeismicTool() {
       </button>
 
       <p className="text-xs text-slate-400 mt-3">
-        Kh表・耐震支持間隔・許容応力度式は実際の検討書掲載値と照合済みです。吊り材は片持ち／上下固定（フレーム）から選べる簡易モデルで、
-        アンカーボルトの耐力（fts式含む）も検定に含めています。ただし取付部板厚の検討、3次元架構の応力解析は含みません。
+        Kh表・耐震支持間隔・許容応力度式は建築設備耐震設計・施工指針2014年版／鋼構造許容応力度設計規準に基づいています。吊り材は片持ち／上下固定（フレーム）から選べる簡易モデルで、
+        アンカーボルトの耐力（fts式含む）・取付部板厚も検定に含めています。3次元架構の応力解析は含みません。
       </p>
     </div>
   );
