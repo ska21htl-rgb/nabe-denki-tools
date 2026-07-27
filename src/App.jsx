@@ -227,7 +227,7 @@ function FireproofTool() {
 
       {match && (
         <ResultCard>
-          <ResultRow label="工法番号" value={match.methodNo} />
+          <ResultRow label="認定・評定番号" value={match.methodNo} />
           <ResultRow label="開口部" value={match.opening} />
           <ResultRow label="ケーブル上限" value={match.cableMax} />
           <ResultRow label="占積率上限" value={match.limit} unit="%" />
@@ -584,7 +584,7 @@ function PenetrationOccupancyTool() {
           </div>
           {fpMatch && (
             <p className="text-xs text-slate-400">
-              {fpMatch.methodNo}　開口部：{fpMatch.opening}　占積率上限：
+              認定・評定番号：{fpMatch.methodNo}　開口部：{fpMatch.opening}　占積率上限：
               <span className="font-semibold text-slate-200">{fpMatch.limit}%</span>
             </p>
           )}
@@ -652,7 +652,7 @@ function PenetrationOccupancyTool() {
         <ResultRow label="ケーブル断面積合計" value={cableArea.toFixed(0)} unit="mm²" />
         <ResultRow label="占積率" value={rate.toFixed(2)} unit="%" />
         <ResultRow label="合格基準" value={`${occupancyLimit}%以内`} />
-        <ResultRow label="基準の出所" value={useMethod && fpMatch ? `${fpMatch.methodNo}` : "暫定値"} />
+        <ResultRow label="基準の出所（認定・評定番号）" value={useMethod && fpMatch ? `${fpMatch.methodNo}` : "暫定値"} />
         <ResultRow label="判定" value={ok ? "OK（基準内）" : "NG（超過）"} />
       </ResultCard>
 
