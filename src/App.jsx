@@ -34,15 +34,18 @@ const inputCls =
 const selectCls = inputCls + " appearance-none";
 
 function ResultCard({ children, accent = "blue" }) {
-  const ring = accent === "amber" ? "border-amber-500/40 bg-amber-500/10" : "border-blue-500/40 bg-blue-500/10";
+  const ring =
+    accent === "red" ? "border-red-500/40 bg-red-500/10" :
+    accent === "amber" ? "border-amber-500/40 bg-amber-500/10" :
+    "border-blue-500/40 bg-blue-500/10";
   return <div className={`rounded-xl border ${ring} p-4 mt-2`}>{children}</div>;
 }
 
-function ResultRow({ label, value, unit }) {
+function ResultRow({ label, value, unit, valueClassName }) {
   return (
     <div className="flex items-baseline justify-between py-1.5 border-b border-white/5 last:border-b-0">
       <span className="text-sm text-slate-300">{label}</span>
-      <span className="text-lg font-bold text-slate-50 tabular-nums">
+      <span className={`text-lg font-bold tabular-nums ${valueClassName || "text-slate-50"}`}>
         {value}
         {unit && <span className="text-sm font-normal text-slate-400 ml-1">{unit}</span>}
       </span>
@@ -465,9 +468,9 @@ function OccupancyTool() {
         </button>
       </div>
 
-      <ResultCard accent={ok ? "blue" : "amber"}>
+      <ResultCard accent={ok ? "blue" : "red"}>
         <ResultRow label="占積率" value={rate.toFixed(1)} unit="%" />
-        <ResultRow label="判定" value={ok ? "OK（規定内）" : "NG（超過）"} />
+        <ResultRow label="判定" value={ok ? "OK（規定内）" : "NG（超過）"} valueClassName={ok ? "text-blue-700" : "text-red-600"} />
       </ResultCard>
 
       <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 mt-3">
@@ -648,12 +651,12 @@ function PenetrationOccupancyTool() {
         </button>
       </div>
 
-      <ResultCard accent={ok ? "blue" : "amber"}>
+      <ResultCard accent={ok ? "blue" : "red"}>
         <ResultRow label="ケーブル断面積合計" value={cableArea.toFixed(0)} unit="mm²" />
         <ResultRow label="占積率" value={rate.toFixed(2)} unit="%" />
         <ResultRow label="合格基準" value={`${occupancyLimit}%以内`} />
         <ResultRow label="基準の出所（認定・評定番号）" value={useMethod && fpMatch ? `${fpMatch.methodNo}` : "暫定値"} />
-        <ResultRow label="判定" value={ok ? "OK（基準内）" : "NG（超過）"} />
+        <ResultRow label="判定" value={ok ? "OK（基準内）" : "NG（超過）"} valueClassName={ok ? "text-blue-700" : "text-red-600"} />
       </ResultCard>
 
       {!ok && (
