@@ -3,8 +3,6 @@
 // 「天井裏貫通部／PF管内／鋼製ボックス内」の3段階に分かれ単純な1数値で表せないため未収録（別途カタログ確認）
 export const FIREPROOF_DATA = [
   // ---- 防火区画（国土交通大臣認定工法）／プラシールNF-12HM ----
-  { category: "防火区画", putty: "NF-12HM", wall: "中空壁", methodNo: "PS060WL-1161", opening: "φ160mm以下 または 160×160mm以下",
-    cableMax: "6600V 導体断面積325mm²以下", conduitNote: "PF-54・CD-54 本数制限なし", limit: 62.2 },
   { category: "防火区画", putty: "NF-12HM", wall: "中空壁（45分準耐火）", methodNo: "PS045WL-0880", opening: "φ110mm以下",
     cableMax: "600V 導体断面積100mm²以下", conduitNote: "PF-36・CD-36 合計2本以下（CD管は1本まで）", limit: 43.2 },
   { category: "防火区画", putty: "NF-12HM", wall: "中空壁（鋼製電線管）", methodNo: "PS060WL-0575", opening: "φ123.4mm以下",
@@ -13,7 +11,11 @@ export const FIREPROOF_DATA = [
     cableMax: "600V 導体断面積200mm²以下", conduitNote: "鋼製電線管φ113.4mm以下、PF-36以下合計1本以下", limit: 35.8 },
   { category: "防火区画", putty: "NF-12HM", wall: "片壁", methodNo: "PS060WL-0898", opening: "φ110mm以下",
     cableMax: "600V 導体断面積100mm²以下", conduitNote: "PF-36・CD-36 合計2本以下（CD管は1本まで）", limit: 43.2 },
-  { category: "防火区画", putty: "NF-12HM", wall: "ALC・コンクリート壁", methodNo: "PS060WL-1158", opening: "φ216mm以下",
+  // PS060WL-1161：旧・中空壁の番号だったが工法統合（→1316）に伴い番号が空き、
+  // 日東化成工業の現行工法一覧ではALC・コンクリート壁（壁厚60mm以上）に再割当されている（2026年7月時点、公式サイトで確認）
+  { category: "防火区画", putty: "NF-12HM", wall: "ALC・コンクリート壁（60mm以上）", methodNo: "PS060WL-1161", opening: "φ160mm以下 または 160×160mm以下",
+    cableMax: "6600V 導体断面積325mm²以下", conduitNote: "PF-54・CD-54 本数制限なし", limit: 62.2 },
+  { category: "防火区画", putty: "NF-12HM", wall: "ALC・コンクリート壁（75mm以上）", methodNo: "PS060WL-1158", opening: "φ216mm以下",
     cableMax: "6600V 導体断面積325mm²以下", conduitNote: "PF-54・CD-54・VE54・FEP-50以下 本数制限なし", limit: 50.6 },
   { category: "防火区画", putty: "NF-12HM", wall: "ALC・コンクリート壁（鋼製電線管）", methodNo: "PS060WL-0575", opening: "φ123.4mm以下",
     cableMax: "600V 導体断面積200mm²以下", conduitNote: "鋼製電線管φ113.4mm以下、PF-28・CD-36合計1本以下", limit: 33.4 },
