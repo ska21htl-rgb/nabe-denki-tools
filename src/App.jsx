@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useRef, useCallback, useEffect, createContext, useContext } from "react";
+import ReactDOM from "react-dom";
 import {
   Search, Calculator, ChevronLeft, Ruler, Layers, CircleDot, Link2, Flame,
   Zap, Grid3x3, Boxes, PieChart, Plug, AlertTriangle, Plus, Trash2,
@@ -52,6 +53,10 @@ function ResultRow({ label, value, unit, valueClassName }) {
     </div>
   );
 }
+
+// ツール個別のサイドパネル（右ペイン内、max-w-2xlの本文幅の外側）を描画するためのポータル先。
+// App側で <main> の余白部分にDOM要素を用意し、各ツールはここへPortalで自分のパネルを差し込む。
+const SidePanelContext = createContext(null);
 
 function RefBadge({ text = "参考値・要確認" }) {
   return (
@@ -812,6 +817,7 @@ function WiringCalcTool() {
 }
 
 function RackSeismicTool() {
+  const sidePanelHost = useContext(SidePanelContext);
   const [cls, setCls] = useState("A");
   const [floor, setFloor] = useState("mid");
   const [rackWeight, setRackWeight] = useState(5);
@@ -931,6 +937,23 @@ function RackSeismicTool() {
   };
   const [savedList, setSavedList] = useState(loadSavedList);
   const [savedPanelOpen, setSavedPanelOpen] = useState(false);
+  const [paneNarrow, setPaneNarrow] = useState(false); // 右ペインの実寸が狭い時は自動でパネルを閉じる
+
+  // 右ペインの実寸を監視し、狭い時は自動でパネルを閉じる（ブラウザ全体の幅ではなく、
+  // 実際にサイドバーと本文が共有しているコンテナの幅を見る）
+  useEffect(() => {
+    if (!sidePanelHost || !sidePanelHost.parentElement) return;
+    const NARROW_THRESHOLD = 780;
+    const target = sidePanelHost.parentElement;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width ?? 0;
+      const narrow = w < NARROW_THRESHOLD;
+      setPaneNarrow(narrow);
+      if (narrow) setSavedPanelOpen(false);
+    });
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [sidePanelHost]);
   const [saveName, setSaveName] = useState("");
   const persistSavedList = (list) => {
     setSavedList(list);
@@ -1282,8 +1305,7 @@ function RackSeismicTool() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 items-start">
-      <div className="flex-1 min-w-0">
+    <div>
       <Field label="耐震クラス">
         <select className={selectCls} value={cls} onChange={(e) => setCls(e.target.value)}>
           <option value="S">S種（特に重要な設備）</option>
@@ -1584,66 +1606,70 @@ function RackSeismicTool() {
         Kh表・耐震支持間隔・許容応力度式は建築設備耐震設計・施工指針2014年版／鋼構造許容応力度設計規準に基づいています。吊り材は片持ち／上下固定（フレーム）から選べる簡易モデルで、
         アンカーボルトの耐力（fts式含む）・取付部板厚も検定に含めています。3次元架構の応力解析は含みません。
       </p>
-      </div>
 
-      <div className={`shrink-0 rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden ${savedPanelOpen ? "w-full lg:w-72" : "w-full lg:w-11"}`}>
-        <button
-          onClick={() => setSavedPanelOpen((v) => !v)}
-          className="w-full flex items-center justify-between px-3 py-3 text-sm font-medium text-slate-200"
-        >
-          {savedPanelOpen ? (
-            <>
-              <span>保存済み結果（{savedList.length}件）</span>
-              <span className="text-slate-400">閉じる ▶</span>
-            </>
-          ) : (
-            <span className="mx-auto text-slate-400 lg:[writing-mode:vertical-rl] flex items-center gap-1">
-              ◀ 保存済み（{savedList.length}）
-            </span>
-          )}
-        </button>
-        {savedPanelOpen && (
-          <div className="px-3 pb-4 border-t border-slate-700">
-            <div className="flex flex-col gap-2 mt-3 mb-3">
-              <input
-                type="text"
-                className={`${inputCls}`}
-                placeholder="名称（例：現場A・K-2）"
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-              />
-              <button
-                onClick={handleSaveResult}
-                disabled={!saveName.trim()}
-                className="bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg px-3 py-2"
-              >
-                現在の内容を保存
-              </button>
-            </div>
-            {savedList.length === 0 ? (
-              <p className="text-xs text-slate-500">保存済みの結果はありません。</p>
+      {sidePanelHost && ReactDOM.createPortal(
+        <div className={`rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden transition-all ${savedPanelOpen ? "w-72" : "w-11"}`}>
+          <button
+            onClick={() => !paneNarrow && setSavedPanelOpen((v) => !v)}
+            disabled={paneNarrow}
+            title={paneNarrow ? "画面（ペイン）を広げると開けます" : undefined}
+            className={`w-full flex items-center justify-between px-3 py-3 text-sm font-medium text-slate-200 ${paneNarrow ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            {savedPanelOpen ? (
+              <>
+                <span>保存済み結果（{savedList.length}件）</span>
+                <span className="text-slate-400">閉じる ▶</span>
+              </>
             ) : (
-              <ul className="space-y-2">
-                {savedList.map((r) => (
-                  <li key={r.id} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-[11px] font-bold rounded px-1.5 py-0.5 ${r.results.overallJudge === "OK" ? "text-blue-300 bg-blue-500/10" : "text-red-400 bg-red-500/10"}`}>
-                        {r.results.overallJudge}
-                      </span>
-                      <span className="text-sm text-slate-200 truncate">{r.name}</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mb-2">{new Date(r.savedAt).toLocaleString("ja-JP")}</p>
-                    <div className="flex gap-3">
-                      <button onClick={() => handleLoadResult(r)} className="text-xs font-medium text-blue-400 hover:text-blue-300">読込</button>
-                      <button onClick={() => handleDeleteResult(r.id)} className="text-xs font-medium text-red-400 hover:text-red-300">削除</button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <span className="mx-auto text-slate-400 [writing-mode:vertical-rl] flex items-center gap-1">
+                ◀ 保存済み（{savedList.length}）
+              </span>
             )}
-          </div>
-        )}
-      </div>
+          </button>
+          {savedPanelOpen && (
+            <div className="px-3 pb-4 border-t border-slate-700">
+              <div className="flex flex-col gap-2 mt-3 mb-3">
+                <input
+                  type="text"
+                  className={`${inputCls}`}
+                  placeholder="名称（例：現場A・K-2）"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                />
+                <button
+                  onClick={handleSaveResult}
+                  disabled={!saveName.trim()}
+                  className="bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg px-3 py-2"
+                >
+                  現在の内容を保存
+                </button>
+              </div>
+              {savedList.length === 0 ? (
+                <p className="text-xs text-slate-500">保存済みの結果はありません。</p>
+              ) : (
+                <ul className="space-y-2">
+                  {savedList.map((r) => (
+                    <li key={r.id} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[11px] font-bold rounded px-1.5 py-0.5 ${r.results.overallJudge === "OK" ? "text-blue-300 bg-blue-500/10" : "text-red-400 bg-red-500/10"}`}>
+                          {r.results.overallJudge}
+                        </span>
+                        <span className="text-sm text-slate-200 truncate">{r.name}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mb-2">{new Date(r.savedAt).toLocaleString("ja-JP")}</p>
+                      <div className="flex gap-3">
+                        <button onClick={() => handleLoadResult(r)} className="text-xs font-medium text-blue-400 hover:text-blue-300">読込</button>
+                        <button onClick={() => handleDeleteResult(r.id)} className="text-xs font-medium text-red-400 hover:text-red-300">削除</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>,
+        sidePanelHost
+      )}
     </div>
   );
 }
@@ -1679,6 +1705,7 @@ export default function App() {
   const [toolId, setToolId] = useState(TOOLS.search[0].id);
   const [navOpen, setNavOpen] = useState(false); // モバイル用：左ペインの開閉
   const [leftWidth, setLeftWidth] = useState(288);
+  const [sidePanelHost, setSidePanelHost] = useState(null);
   const containerRef = React.useRef(null);
   const draggingRef = React.useRef(false);
 
@@ -1831,20 +1858,29 @@ export default function App() {
 
         {/* ===== 右ペイン（独立ウインドウ・独立スクロール） ===== */}
         <main className="flex-1 min-w-0 rounded-xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/30 overflow-y-auto">
-          <div className="max-w-2xl mx-auto px-6 py-6">
-            {currentTool && (
-              <>
-                <div className="flex items-center gap-2.5 mb-1">
-                  <span className={`w-2 h-2 rounded-full ${accentBg}`} />
-                  <span className="text-xs font-medium text-slate-400">{category === "search" ? "検索系" : "計算系"}</span>
-                </div>
-                <h2 className="text-xl font-bold mb-1">{currentTool.name}</h2>
-                <p className="text-sm text-slate-400 mb-6">{currentTool.desc}</p>
-                <currentTool.Comp />
-              </>
-            )}
+          <div className="flex items-start">
+            <div className="flex-1 min-w-0">
+              <div className="max-w-2xl mx-auto px-6 py-6">
+                {currentTool && (
+                  <>
+                    <div className="flex items-center gap-2.5 mb-1">
+                      <span className={`w-2 h-2 rounded-full ${accentBg}`} />
+                      <span className="text-xs font-medium text-slate-400">{category === "search" ? "検索系" : "計算系"}</span>
+                    </div>
+                    <h2 className="text-xl font-bold mb-1">{currentTool.name}</h2>
+                    <p className="text-sm text-slate-400 mb-6">{currentTool.desc}</p>
+                    <SidePanelContext.Provider value={sidePanelHost}>
+                      <currentTool.Comp />
+                    </SidePanelContext.Provider>
+                  </>
+                )}
+              </div>
+            </div>
+            {/* ツール個別サイドパネルのドック先。中身が無ければ幅0で見た目に影響しない */}
+            <div ref={setSidePanelHost} className="shrink-0 sticky top-6 py-6 pr-6" />
           </div>
         </main>
+
       </div>
     </div>
   );
