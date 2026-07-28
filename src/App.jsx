@@ -919,6 +919,77 @@ function RackSeismicTool() {
   const plateTensRatio = sigmaBTens / fb1Short;
   const plateJudge = plateCompRatio <= 1.0 && plateTensRatio <= 1.0 ? "OK" : "NG";
 
+  // --- 保存済み結果（キャッシュ）：個人のブラウザ内のみに保存する一時メモ。git管理対象のデータとは別物 ---
+  const SAVE_KEY = "denki_rack_seismic_saved_v1";
+  const loadSavedList = () => {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+  const [savedList, setSavedList] = useState(loadSavedList);
+  const [savedPanelOpen, setSavedPanelOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const persistSavedList = (list) => {
+    setSavedList(list);
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(list));
+    } catch {
+      // 保存領域が使えない場合は画面上のみの一時状態として扱う
+    }
+  };
+
+  const overallJudge =
+    (angleJudge === "OK") &&
+    (anchorJudge === "OK") &&
+    (plateJudge === "OK") &&
+    (bracketType !== "product" || judgement === "OK")
+      ? "OK" : "NG";
+
+  const handleSaveResult = () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const record = {
+      id: `sr_${Date.now()}`,
+      name,
+      savedAt: new Date().toISOString(),
+      inputs: {
+        cls, floor, rackWeight, cableWeight, selfSpan, seismicSpan, khOverride,
+        bracketType, allowable, angleSize, materialGrade, angleCount, dropLength,
+        structModel, boltSize, boltsPerLeg, boltSpacing, plateBc, plateL, plateEdge,
+        projectName, author, docDate,
+      },
+      results: {
+        kh, fh, fv, wSelf, wSeismic,
+        angle: { ratio: angleRatio, judge: angleJudge },
+        anchor: { qRatio, tRatio, ftsRatio, judge: anchorJudge },
+        plate: { compRatio: plateCompRatio, tensRatio: plateTensRatio, judge: plateJudge },
+        bracket: bracketType === "product" ? { judgement } : null,
+        overallJudge,
+      },
+    };
+    persistSavedList([record, ...savedList]);
+    setSaveName("");
+  };
+
+  const handleLoadResult = (record) => {
+    const i = record.inputs;
+    setCls(i.cls); setFloor(i.floor); setRackWeight(i.rackWeight); setCableWeight(i.cableWeight);
+    setSelfSpan(i.selfSpan); setSeismicSpan(i.seismicSpan); setKhOverride(i.khOverride);
+    setBracketType(i.bracketType); setAllowable(i.allowable); setAngleSize(i.angleSize);
+    setMaterialGrade(i.materialGrade); setAngleCount(i.angleCount); setDropLength(i.dropLength);
+    setStructModel(i.structModel); setBoltSize(i.boltSize); setBoltsPerLeg(i.boltsPerLeg);
+    setBoltSpacing(i.boltSpacing); setPlateBc(i.plateBc); setPlateL(i.plateL); setPlateEdge(i.plateEdge);
+    setProjectName(i.projectName || ""); setAuthor(i.author || ""); setDocDate(i.docDate || new Date().toISOString().slice(0, 10));
+    setSavedPanelOpen(false);
+  };
+
+  const handleDeleteResult = (id) => {
+    persistSavedList(savedList.filter((r) => r.id !== id));
+  };
+
   if (showReport) {
     return (
       <div>
@@ -1212,6 +1283,59 @@ function RackSeismicTool() {
 
   return (
     <div>
+      <div className="rounded-xl border border-slate-700 bg-slate-800/60 mb-4 overflow-hidden">
+        <button
+          onClick={() => setSavedPanelOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-200"
+        >
+          <span>保存済み結果（{savedList.length}件）</span>
+          <span className="text-slate-400">{savedPanelOpen ? "閉じる ▲" : "開く ▼"}</span>
+        </button>
+        {savedPanelOpen && (
+          <div className="px-4 pb-4 border-t border-slate-700">
+            <div className="flex gap-2 mt-3 mb-3">
+              <input
+                type="text"
+                className={`${inputCls} flex-1`}
+                placeholder="名称（例：現場A・K-2）"
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+              />
+              <button
+                onClick={handleSaveResult}
+                disabled={!saveName.trim()}
+                className="shrink-0 bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg px-3 py-2"
+              >
+                現在の内容を保存
+              </button>
+            </div>
+            {savedList.length === 0 ? (
+              <p className="text-xs text-slate-500">保存済みの結果はありません。</p>
+            ) : (
+              <ul className="space-y-2">
+                {savedList.map((r) => (
+                  <li key={r.id} className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[11px] font-bold rounded px-1.5 py-0.5 ${r.results.overallJudge === "OK" ? "text-blue-300 bg-blue-500/10" : "text-red-400 bg-red-500/10"}`}>
+                          {r.results.overallJudge}
+                        </span>
+                        <span className="text-sm text-slate-200 truncate">{r.name}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">{new Date(r.savedAt).toLocaleString("ja-JP")}</p>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => handleLoadResult(r)} className="text-xs font-medium text-blue-400 hover:text-blue-300 px-2 py-1">読込</button>
+                      <button onClick={() => handleDeleteResult(r.id)} className="text-xs font-medium text-red-400 hover:text-red-300 px-2 py-1">削除</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
       <Field label="耐震クラス">
         <select className={selectCls} value={cls} onChange={(e) => setCls(e.target.value)}>
           <option value="S">S種（特に重要な設備）</option>
