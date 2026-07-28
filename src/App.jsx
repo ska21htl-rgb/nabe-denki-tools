@@ -1282,60 +1282,8 @@ function RackSeismicTool() {
   }
 
   return (
-    <div>
-      <div className="rounded-xl border border-slate-700 bg-slate-800/60 mb-4 overflow-hidden">
-        <button
-          onClick={() => setSavedPanelOpen((v) => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-200"
-        >
-          <span>保存済み結果（{savedList.length}件）</span>
-          <span className="text-slate-400">{savedPanelOpen ? "閉じる ▲" : "開く ▼"}</span>
-        </button>
-        {savedPanelOpen && (
-          <div className="px-4 pb-4 border-t border-slate-700">
-            <div className="flex gap-2 mt-3 mb-3">
-              <input
-                type="text"
-                className={`${inputCls} flex-1`}
-                placeholder="名称（例：現場A・K-2）"
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-              />
-              <button
-                onClick={handleSaveResult}
-                disabled={!saveName.trim()}
-                className="shrink-0 bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg px-3 py-2"
-              >
-                現在の内容を保存
-              </button>
-            </div>
-            {savedList.length === 0 ? (
-              <p className="text-xs text-slate-500">保存済みの結果はありません。</p>
-            ) : (
-              <ul className="space-y-2">
-                {savedList.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[11px] font-bold rounded px-1.5 py-0.5 ${r.results.overallJudge === "OK" ? "text-blue-300 bg-blue-500/10" : "text-red-400 bg-red-500/10"}`}>
-                          {r.results.overallJudge}
-                        </span>
-                        <span className="text-sm text-slate-200 truncate">{r.name}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">{new Date(r.savedAt).toLocaleString("ja-JP")}</p>
-                    </div>
-                    <div className="flex gap-2 shrink-0">
-                      <button onClick={() => handleLoadResult(r)} className="text-xs font-medium text-blue-400 hover:text-blue-300 px-2 py-1">読込</button>
-                      <button onClick={() => handleDeleteResult(r.id)} className="text-xs font-medium text-red-400 hover:text-red-300 px-2 py-1">削除</button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </div>
-
+    <div className="flex flex-col lg:flex-row gap-4 items-start">
+      <div className="flex-1 min-w-0">
       <Field label="耐震クラス">
         <select className={selectCls} value={cls} onChange={(e) => setCls(e.target.value)}>
           <option value="S">S種（特に重要な設備）</option>
@@ -1343,6 +1291,7 @@ function RackSeismicTool() {
           <option value="B">B種（一般設備）</option>
         </select>
       </Field>
+
       <Field label="設置場所">
         <select className={selectCls} value={floor} onChange={(e) => setFloor(e.target.value)}>
           <option value="top">上層階・屋上・塔屋</option>
@@ -1635,6 +1584,66 @@ function RackSeismicTool() {
         Kh表・耐震支持間隔・許容応力度式は建築設備耐震設計・施工指針2014年版／鋼構造許容応力度設計規準に基づいています。吊り材は片持ち／上下固定（フレーム）から選べる簡易モデルで、
         アンカーボルトの耐力（fts式含む）・取付部板厚も検定に含めています。3次元架構の応力解析は含みません。
       </p>
+      </div>
+
+      <div className={`shrink-0 rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden ${savedPanelOpen ? "w-full lg:w-72" : "w-full lg:w-11"}`}>
+        <button
+          onClick={() => setSavedPanelOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-3 py-3 text-sm font-medium text-slate-200"
+        >
+          {savedPanelOpen ? (
+            <>
+              <span>保存済み結果（{savedList.length}件）</span>
+              <span className="text-slate-400">閉じる ▶</span>
+            </>
+          ) : (
+            <span className="mx-auto text-slate-400 lg:[writing-mode:vertical-rl] flex items-center gap-1">
+              ◀ 保存済み（{savedList.length}）
+            </span>
+          )}
+        </button>
+        {savedPanelOpen && (
+          <div className="px-3 pb-4 border-t border-slate-700">
+            <div className="flex flex-col gap-2 mt-3 mb-3">
+              <input
+                type="text"
+                className={`${inputCls}`}
+                placeholder="名称（例：現場A・K-2）"
+                value={saveName}
+                onChange={(e) => setSaveName(e.target.value)}
+              />
+              <button
+                onClick={handleSaveResult}
+                disabled={!saveName.trim()}
+                className="bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg px-3 py-2"
+              >
+                現在の内容を保存
+              </button>
+            </div>
+            {savedList.length === 0 ? (
+              <p className="text-xs text-slate-500">保存済みの結果はありません。</p>
+            ) : (
+              <ul className="space-y-2">
+                {savedList.map((r) => (
+                  <li key={r.id} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[11px] font-bold rounded px-1.5 py-0.5 ${r.results.overallJudge === "OK" ? "text-blue-300 bg-blue-500/10" : "text-red-400 bg-red-500/10"}`}>
+                        {r.results.overallJudge}
+                      </span>
+                      <span className="text-sm text-slate-200 truncate">{r.name}</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-2">{new Date(r.savedAt).toLocaleString("ja-JP")}</p>
+                    <div className="flex gap-3">
+                      <button onClick={() => handleLoadResult(r)} className="text-xs font-medium text-blue-400 hover:text-blue-300">読込</button>
+                      <button onClick={() => handleDeleteResult(r.id)} className="text-xs font-medium text-red-400 hover:text-red-300">削除</button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
