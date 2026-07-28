@@ -61,6 +61,76 @@ function RefBadge({ text = "参考値・要確認" }) {
   );
 }
 
+// 区画工法の断面図（テンプレート＋数値注入方式）
+// type: "hollow"＝中空壁（ボード2枚＋中空層） / "thick"＝ALC・コンクリート壁や床など単一の厚壁
+// 数値（壁厚・開口寸法・占積率）は FIREPROOF_DATA 側の diagram フィールドから注入するだけで、
+// 座標・配色（青＝寸法／アンバー＝充てん材／グレー＝壁）はテンプレート側で固定管理する
+function WallSectionDiagram({ type, methodNo, wallThickness, opening, limit, label }) {
+  const isHollow = type === "hollow";
+  return (
+    <svg viewBox="0 0 360 225" className="w-full max-w-xs mx-auto" style={{ background: "#0f172a", borderRadius: 12, padding: 10 }}>
+      <text x="180" y="16" textAnchor="middle" fontSize="11" fill="#e2e8f0" fontWeight="bold">
+        {label}（断面図）　{methodNo}
+      </text>
+
+      {isHollow ? (
+        <>
+          <rect x="150" y="40" width="8" height="116" fill="#94a3b8" />
+          <rect x="172" y="40" width="8" height="116" fill="#94a3b8" />
+          <text x="154" y="35" textAnchor="middle" fontSize="8" fill="#94a3b8">壁</text>
+          <text x="176" y="35" textAnchor="middle" fontSize="8" fill="#94a3b8">壁</text>
+          <path d="M140 86 L150 80 L150 116 L140 110 Z" fill="#f59e0b" opacity="0.85" />
+          <path d="M180 80 L190 86 L190 110 L180 116 Z" fill="#f59e0b" opacity="0.85" />
+        </>
+      ) : (
+        <>
+          <rect x="150" y="40" width="40" height="116" fill="#475569" />
+          <text x="170" y="35" textAnchor="middle" fontSize="8" fill="#94a3b8">壁／床</text>
+          <path d="M140 86 L150 80 L150 116 L140 110 Z" fill="#f59e0b" opacity="0.85" />
+          <path d="M190 80 L200 86 L200 110 L190 116 Z" fill="#f59e0b" opacity="0.85" />
+        </>
+      )}
+
+      {/* ケーブル（水平に貫通する長尺管） */}
+      <rect x="20" y="88" width="300" height="20" rx="10" fill="none" stroke="#e2e8f0" strokeWidth="1.5" />
+      <g stroke="#475569" strokeWidth="1">
+        <line x1="40" y1="88" x2="40" y2="108" /><line x1="58" y1="88" x2="58" y2="108" />
+        <line x1="76" y1="88" x2="76" y2="108" /><line x1="94" y1="88" x2="94" y2="108" />
+        <line x1="236" y1="88" x2="236" y2="108" /><line x1="254" y1="88" x2="254" y2="108" />
+        <line x1="272" y1="88" x2="272" y2="108" /><line x1="290" y1="88" x2="290" y2="108" />
+      </g>
+
+      <text x="20" y="188" fontSize="8" fill="#fbbf24">充てん材（両面に盛る）</text>
+      <line x1="20" y1="183" x2="138" y2="102" stroke="#fbbf24" strokeWidth="0.5" strokeDasharray="2,2" />
+
+      {wallThickness && (
+        <>
+          <line x1="150" y1="165" x2="190" y2="165" stroke="#38bdf8" strokeWidth="1" />
+          <line x1="150" y1="160" x2="150" y2="170" stroke="#38bdf8" strokeWidth="1" />
+          <line x1="190" y1="160" x2="190" y2="170" stroke="#38bdf8" strokeWidth="1" />
+          <text x="170" y="178" textAnchor="middle" fontSize="9" fill="#38bdf8">{wallThickness}</text>
+        </>
+      )}
+
+      {opening && (
+        <>
+          <line x1="295" y1="40" x2="295" y2="156" stroke="#38bdf8" strokeWidth="1" />
+          <line x1="290" y1="40" x2="300" y2="40" stroke="#38bdf8" strokeWidth="1" />
+          <line x1="290" y1="156" x2="300" y2="156" stroke="#38bdf8" strokeWidth="1" />
+          <text x="305" y="98" textAnchor="middle" fontSize="8" fill="#38bdf8" transform="rotate(-90 305 98)">{opening}</text>
+
+          <line x1="320" y1="30" x2="320" y2="166" stroke="#38bdf8" strokeWidth="1" opacity="0.6" />
+          <line x1="315" y1="30" x2="325" y2="30" stroke="#38bdf8" strokeWidth="1" opacity="0.6" />
+          <line x1="315" y1="166" x2="325" y2="166" stroke="#38bdf8" strokeWidth="1" opacity="0.6" />
+          <text x="330" y="98" textAnchor="middle" fontSize="8" fill="#38bdf8" opacity="0.85" transform="rotate(-90 330 98)">開口寸法+20以上</text>
+        </>
+      )}
+
+      <text x="180" y="210" textAnchor="middle" fontSize="9" fill="#94a3b8">占積率 {limit}%以下</text>
+    </svg>
+  );
+}
+
 /* ============================== 検索系ツール ============================== */
 
 function PipeDiameterTool() {
@@ -590,6 +660,18 @@ function PenetrationOccupancyTool() {
               認定・評定番号：{fpMatch.methodNo}　開口部：{fpMatch.opening}　占積率上限：
               <span className="font-semibold text-slate-200">{fpMatch.limit}%</span>
             </p>
+          )}
+          {fpMatch?.diagram && (
+            <div className="mt-3">
+              <WallSectionDiagram
+                type={fpMatch.diagram.type}
+                methodNo={fpMatch.methodNo}
+                wallThickness={fpMatch.diagram.wallThickness}
+                opening={fpMatch.diagram.opening}
+                limit={fpMatch.limit}
+                label={fpMatch.wall}
+              />
+            </div>
           )}
         </div>
       )}
