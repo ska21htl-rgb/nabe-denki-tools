@@ -3,7 +3,7 @@ import ReactDOM from "react-dom";
 import {
   Search, Calculator, ChevronLeft, Ruler, Layers, CircleDot, Link2, Flame,
   Zap, Grid3x3, Boxes, PieChart, Plug, AlertTriangle, Plus, Trash2,
-  ShieldCheck, Printer, FileText, ArrowLeft, Target, Weight, Send, X
+  ShieldCheck, Printer, FileText, ArrowLeft, Target, Weight, Send, X, RotateCcw
 } from "lucide-react";
 import {
   CONDUIT_DATA, conduitInnerDiameter,
@@ -595,6 +595,7 @@ const PENETRATION_HOLE_SIZES = Array.from({ length: 29 }, (_, i) => 10 + i * 5);
 const PENETRATION_OCCUPANCY_LIMIT = 48; // 合格基準（暫定）：48%以内
 
 function PenetrationOccupancyTool() {
+  const { host: sidePanelHost, narrow: paneNarrow } = useContext(SidePanelContext) || {};
   const [holeSize, setHoleSize] = usePersistedState("draft:penetration:holeSize", 50);
   const wireTypes = Object.keys(WIRE_DATA);
   const [cables, setCables] = usePersistedState("draft:penetration:cables", [{ wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
@@ -613,6 +614,16 @@ function PenetrationOccupancyTool() {
   const fpCurWall = fpCurWalls.includes(fpWall) ? fpWall : fpCurWalls[0];
   const fpMatch = FIREPROOF_DATA.find((d) => d.category === fpCategory && d.putty === fpCurPutty && d.wall === fpCurWall);
   const occupancyLimit = useMethod && fpMatch ? fpMatch.limit : PENETRATION_OCCUPANCY_LIMIT;
+
+  const resetInputs = () => {
+    if (!window.confirm("入力内容をリセットしますか？（保存済み結果は消えません）")) return;
+    setHoleSize(50);
+    setCables([{ wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
+    setUseMethod(false);
+    setFpCategory(fpCategories[0]);
+    setFpPutty(fpPuttiesFor(fpCategories[0])[0]);
+    setFpWall(fpWallsFor(fpCategories[0], fpPuttiesFor(fpCategories[0])[0])[0]);
+  };
 
   const holeArea = Math.PI * Math.pow(holeSize / 2, 2);
 
@@ -642,8 +653,62 @@ function PenetrationOccupancyTool() {
     return null;
   })();
 
+  // --- 保存済み結果（キャッシュ）：他ツールと同じ方式。個人のブラウザ内のみに保存する一時メモ ---
+  const PENETRATION_SAVE_KEY = "denki_penetration_saved_v1";
+  const loadSavedList = () => {
+    try {
+      const raw = localStorage.getItem(PENETRATION_SAVE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+  const [savedList, setSavedList] = useState(loadSavedList);
+  const [savedPanelOpen, setSavedPanelOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const persistSavedList = (list) => {
+    setSavedList(list);
+    try {
+      localStorage.setItem(PENETRATION_SAVE_KEY, JSON.stringify(list));
+    } catch {
+      // 保存領域が使えない場合は画面上のみの一時状態として扱う
+    }
+  };
+  const handleSaveResult = () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const record = {
+      id: `po_${Date.now()}`,
+      name,
+      savedAt: new Date().toISOString(),
+      inputs: { holeSize, cables, useMethod, fpCategory, fpPutty: fpCurPutty, fpWall: fpCurWall },
+      results: { rate, occupancyLimit, ok },
+    };
+    persistSavedList([record, ...savedList]);
+    setSaveName("");
+  };
+  const handleLoadResult = (record) => {
+    const i = record.inputs;
+    setHoleSize(i.holeSize);
+    setCables(i.cables);
+    setUseMethod(i.useMethod);
+    setFpCategory(i.fpCategory);
+    setFpPutty(i.fpPutty);
+    setFpWall(i.fpWall);
+    setSavedPanelOpen(false);
+  };
+  const handleDeleteResult = (id) => {
+    persistSavedList(savedList.filter((r) => r.id !== id));
+  };
+
   return (
     <div>
+      <div className="flex justify-end mb-3">
+        <button onClick={resetInputs} className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-red-400">
+          <RotateCcw size={14} /> 入力をリセット
+        </button>
+      </div>
+
       <Field label="貫通穴径（直径）">
         <select className={selectCls} value={holeSize} onChange={(e) => setHoleSize(Number(e.target.value))}>
           {PENETRATION_HOLE_SIZES.map((d) => <option key={d} value={d}>{d}mm</option>)}
@@ -790,6 +855,73 @@ function PenetrationOccupancyTool() {
         計算式：（ケーブル断面積合計 ÷ 貫通穴断面積）×100。ケーブル外径はWIRE_DATA（CV/CVT等）の参考値です。
         耐火処理工法を指定しない場合の合格基準48%は暫定値です。工法を指定した場合は日東化成カタログ記載の占積率上限を採用していますが、実際の適用にあたっては設計者・施工管理者の確認をお願いします。
       </p>
+
+      {sidePanelHost && ReactDOM.createPortal(
+        <div className={`rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden transition-all ${paneNarrow ? "w-full" : savedPanelOpen ? "w-72" : "w-11"}`}>
+          <button
+            onClick={() => setSavedPanelOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-3 text-sm font-medium text-slate-200"
+          >
+            {paneNarrow ? (
+              <>
+                <span>保存済み結果（{savedList.length}件）</span>
+                <span className="text-slate-400">{savedPanelOpen ? "閉じる ▲" : "開く ▼"}</span>
+              </>
+            ) : savedPanelOpen ? (
+              <>
+                <span>保存済み結果（{savedList.length}件）</span>
+                <span className="text-slate-400">閉じる ▶</span>
+              </>
+            ) : (
+              <span className="mx-auto text-slate-400 [writing-mode:vertical-rl] flex items-center gap-1">
+                ◀ 保存済み（{savedList.length}）
+              </span>
+            )}
+          </button>
+          {savedPanelOpen && (
+            <div className="px-3 pb-4 border-t border-slate-700">
+              <div className="flex flex-col gap-2 mt-3 mb-3">
+                <input
+                  type="text"
+                  className={`${inputCls}`}
+                  placeholder="名称（例：現場A・K-2）"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                />
+                <button
+                  onClick={handleSaveResult}
+                  disabled={!saveName.trim()}
+                  className="bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg px-3 py-2"
+                >
+                  現在の内容を保存
+                </button>
+              </div>
+              {savedList.length === 0 ? (
+                <p className="text-xs text-slate-500">保存済みの結果はありません。</p>
+              ) : (
+                <ul className="space-y-2">
+                  {savedList.map((r) => (
+                    <li key={r.id} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[11px] font-bold rounded px-1.5 py-0.5 ${r.results.ok ? "text-blue-300 bg-blue-500/10" : "text-red-400 bg-red-500/10"}`}>
+                          {r.results.ok ? "OK" : "NG"}
+                        </span>
+                        <span className="text-sm text-slate-200 truncate">{r.name}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mb-2">{new Date(r.savedAt).toLocaleString("ja-JP")}</p>
+                      <div className="flex gap-3">
+                        <button onClick={() => handleLoadResult(r)} className="text-xs font-medium text-blue-400 hover:text-blue-300">読込</button>
+                        <button onClick={() => handleDeleteResult(r.id)} className="text-xs font-medium text-red-400 hover:text-red-300">削除</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>,
+        sidePanelHost
+      )}
     </div>
   );
 }
@@ -822,6 +954,14 @@ function RackWeightTool() {
   };
   const addCable = () => setCables([...cables, { label: "", sq: sqOptions[0]?.sq, count: 1 }]);
   const removeCable = (i) => setCables(cables.filter((_, idx) => idx !== i));
+
+  const resetInputs = () => {
+    if (!window.confirm("入力内容をリセットしますか？（保存済み結果は消えません）")) return;
+    setRackType(rackTypes[0]);
+    setSeries(seriesFor(rackTypes[0])[0]);
+    setWidth(widthsFor(rackTypes[0], seriesFor(rackTypes[0])[0])[0]);
+    setCables([{ label: "", sq: sqOptions[0]?.sq, count: 1 }]);
+  };
 
   const cableWeightPerM = cables.reduce((sum, c) => {
     const item = sqOptions.find((s) => s.sq === Number(c.sq));
@@ -892,6 +1032,12 @@ function RackWeightTool() {
 
   return (
     <div>
+      <div className="flex justify-end mb-3">
+        <button onClick={resetInputs} className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-red-400">
+          <RotateCcw size={14} /> 入力をリセット
+        </button>
+      </div>
+
       <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 mb-4">
         <p className="text-sm font-semibold text-slate-200 mb-3">ラック仕様</p>
         <div className="grid grid-cols-2 gap-2 mb-2">
@@ -1158,6 +1304,33 @@ function RackSeismicTool() {
   const [plateBc, setPlateBc] = usePersistedState("draft:seismic:plateBc", 100); // 圧縮側の負担幅(mm)
   const [plateL, setPlateL] = usePersistedState("draft:seismic:plateL", 40); // 圧縮側の片持ち長さ(mm)
   const [plateEdge, setPlateEdge] = usePersistedState("draft:seismic:plateEdge", 20); // 引張側：縁端からボルト中心までの長さℓ(mm)
+
+  const resetInputs = () => {
+    if (!window.confirm("入力内容をリセットしますか？（保存済み結果は消えません）")) return;
+    setCls("A");
+    setFloor("mid");
+    setRackWeight(5);
+    setCableWeight(10);
+    setSelfSpan(2.0);
+    setSeismicSpan(recommendedInterval("A", "mid"));
+    setKhOverride("");
+    setBracketType("custom");
+    setAllowable("");
+    setProjectName("");
+    setAuthor("");
+    setDocDate(new Date().toISOString().slice(0, 10));
+    setAngleSize("50×50×6");
+    setMaterialGrade("SS400");
+    setAngleCount(2);
+    setDropLength(300);
+    setStructModel("frame");
+    setBoltSize("M12");
+    setBoltsPerLeg(2);
+    setBoltSpacing(150);
+    setPlateBc(100);
+    setPlateL(40);
+    setPlateEdge(20);
+  };
 
   const khTable = SEISMIC_KH[cls][floor];
   const kh = khOverride !== "" ? Number(khOverride) : khTable;
@@ -1605,6 +1778,12 @@ function RackSeismicTool() {
 
   return (
     <div>
+      <div className="flex justify-end mb-3">
+        <button onClick={resetInputs} className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-red-400">
+          <RotateCcw size={14} /> 入力をリセット
+        </button>
+      </div>
+
       {handoff && (
         <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-4 mb-4">
           <p className="text-sm font-semibold text-blue-200 mb-1">ラック重量計算ツールからの引き継ぎがあります</p>
