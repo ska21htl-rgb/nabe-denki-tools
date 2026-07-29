@@ -9,3 +9,4 @@ export * from "./angleData";
 export * from "./steelData";
 export * from "./anchorBoltData";
 export * from "./seismicData";
+export * from "./rackData";

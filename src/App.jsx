@@ -3,7 +3,7 @@ import ReactDOM from "react-dom";
 import {
   Search, Calculator, ChevronLeft, Ruler, Layers, CircleDot, Link2, Flame,
   Zap, Grid3x3, Boxes, PieChart, Plug, AlertTriangle, Plus, Trash2,
-  ShieldCheck, Printer, FileText, ArrowLeft, Target
+  ShieldCheck, Printer, FileText, ArrowLeft, Target, Weight, Send, X
 } from "lucide-react";
 import {
   CONDUIT_DATA, conduitInnerDiameter,
@@ -17,9 +17,34 @@ import {
   MATERIAL_GRADES, STEEL_E, lambdaP, steelFt, steelFs, steelFc,
   ANCHOR_BOLT_DATA, BOLT_FT_SHORT, BOLT_FS_SHORT,
   SEISMIC_KH, FLOOR_LABEL, CLASS_LABEL, CABLE_RACK_SEISMIC_INTERVAL, recommendedInterval,
+  RACK_DATA,
 } from "./data";
 
 /* ============================== UI 部品 ============================== */
+
+// タブ（ツール）を切り替えてもブラウザの同一セッション内なら入力値を保持する。
+// localStorageではなくsessionStorageを使うのは、ブラウザを閉じたら消える方が、
+// 現場ごとに変わる古い数値が何日も残って誤入力の元になるのを防げるため。
+// 保存済み結果（名前を付けて残す機能）とは別物＝あくまで「直前の作業状態」の下書き。
+function usePersistedState(key, initialValue) {
+  const [state, setState] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(key);
+      if (raw !== null) return JSON.parse(raw);
+    } catch {
+      // 破損データは無視して初期値にフォールバック
+    }
+    return typeof initialValue === "function" ? initialValue() : initialValue;
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify(state));
+    } catch {
+      // sessionStorage不可の環境では画面上のみの一時状態として扱う
+    }
+  }, [key, state]);
+  return [state, setState];
+}
 
 function Field({ label, children }) {
   return (
@@ -413,12 +438,12 @@ function PartitionPrepTool() {
 }
 
 function OccupancyTool() {
-  const [mode, setMode] = useState(32);
+  const [mode, setMode] = usePersistedState("draft:occupancy:mode", 32);
   const pipeTypes = Object.keys(CONDUIT_DATA);
-  const [pipeType, setPipeType] = useState(pipeTypes[0]);
-  const [pipeSize, setPipeSize] = useState(Object.keys(CONDUIT_DATA[pipeTypes[0]])[0]);
+  const [pipeType, setPipeType] = usePersistedState("draft:occupancy:pipeType", pipeTypes[0]);
+  const [pipeSize, setPipeSize] = usePersistedState("draft:occupancy:pipeSize", Object.keys(CONDUIT_DATA[pipeTypes[0]])[0]);
   const wireTypes = Object.keys(WIRE_DATA);
-  const [cables, setCables] = useState([{ wireType: "VVF", spec: Object.keys(WIRE_DATA.VVF)[0], count: 3 }]);
+  const [cables, setCables] = usePersistedState("draft:occupancy:cables", [{ wireType: "VVF", spec: Object.keys(WIRE_DATA.VVF)[0], count: 3 }]);
 
   const curSizes = Object.keys(CONDUIT_DATA[pipeType]);
   const outer = CONDUIT_DATA[pipeType][curSizes.includes(pipeSize) ? pipeSize : curSizes[0]];
@@ -570,18 +595,18 @@ const PENETRATION_HOLE_SIZES = Array.from({ length: 29 }, (_, i) => 10 + i * 5);
 const PENETRATION_OCCUPANCY_LIMIT = 48; // 合格基準（暫定）：48%以内
 
 function PenetrationOccupancyTool() {
-  const [holeSize, setHoleSize] = useState(50);
+  const [holeSize, setHoleSize] = usePersistedState("draft:penetration:holeSize", 50);
   const wireTypes = Object.keys(WIRE_DATA);
-  const [cables, setCables] = useState([{ wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
+  const [cables, setCables] = usePersistedState("draft:penetration:cables", [{ wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
 
   // 貫通処理工法（任意）：選ぶとその工法の占積率上限を基準値として使用
   const fpCategories = [...new Set(FIREPROOF_DATA.map((d) => d.category))];
   const fpPuttiesFor = (cat) => [...new Set(FIREPROOF_DATA.filter((d) => d.category === cat).map((d) => d.putty))];
   const fpWallsFor = (cat, p) => FIREPROOF_DATA.filter((d) => d.category === cat && d.putty === p).map((d) => d.wall);
-  const [useMethod, setUseMethod] = useState(false);
-  const [fpCategory, setFpCategory] = useState(fpCategories[0]);
-  const [fpPutty, setFpPutty] = useState(fpPuttiesFor(fpCategories[0])[0]);
-  const [fpWall, setFpWall] = useState(fpWallsFor(fpCategories[0], fpPuttiesFor(fpCategories[0])[0])[0]);
+  const [useMethod, setUseMethod] = usePersistedState("draft:penetration:useMethod", false);
+  const [fpCategory, setFpCategory] = usePersistedState("draft:penetration:fpCategory", fpCategories[0]);
+  const [fpPutty, setFpPutty] = usePersistedState("draft:penetration:fpPutty", fpPuttiesFor(fpCategories[0])[0]);
+  const [fpWall, setFpWall] = usePersistedState("draft:penetration:fpWall", fpWallsFor(fpCategories[0], fpPuttiesFor(fpCategories[0])[0])[0]);
   const fpCurPutties = fpPuttiesFor(fpCategory);
   const fpCurPutty = fpCurPutties.includes(fpPutty) ? fpPutty : fpCurPutties[0];
   const fpCurWalls = fpWallsFor(fpCategory, fpCurPutty);
@@ -769,12 +794,280 @@ function PenetrationOccupancyTool() {
   );
 }
 
+const RACK_WEIGHT_HANDOFF_KEY = "denki_rack_weight_handoff_v1";
+
+function RackWeightTool() {
+  const { host: sidePanelHost, narrow: paneNarrow } = useContext(SidePanelContext) || {};
+  const rackTypes = [...new Set(RACK_DATA.map((r) => r.type))];
+  const seriesFor = (t) => [...new Set(RACK_DATA.filter((r) => r.type === t).map((r) => r.series))];
+  const widthsFor = (t, s) => RACK_DATA.filter((r) => r.type === t && r.series === s).map((r) => r.width);
+
+  const [rackType, setRackType] = usePersistedState("draft:rackWeight:rackType", rackTypes[0]);
+  const [series, setSeries] = usePersistedState("draft:rackWeight:series", seriesFor(rackTypes[0])[0]);
+  const [width, setWidth] = usePersistedState("draft:rackWeight:width", widthsFor(rackTypes[0], seriesFor(rackTypes[0])[0])[0]);
+
+  const curSeriesList = seriesFor(rackType);
+  const curSeries = curSeriesList.includes(series) ? series : curSeriesList[0];
+  const curWidths = widthsFor(rackType, curSeries);
+  const curWidth = curWidths.includes(width) ? width : curWidths[0];
+  const rackMatch = RACK_DATA.find((r) => r.type === rackType && r.series === curSeries && r.width === curWidth);
+
+  // 重量データがあるのは現状 STANDARD_WIRE_SIZES 側（sq軸・CV/CVT想定）のみ
+  const sqOptions = STANDARD_WIRE_SIZES.filter((s) => s.weightKgPerM !== undefined);
+  const [cables, setCables] = usePersistedState("draft:rackWeight:cables", [{ label: "", sq: sqOptions[0]?.sq, count: 1 }]);
+  const updateCable = (i, key, val) => {
+    const next = [...cables];
+    next[i] = { ...next[i], [key]: val };
+    setCables(next);
+  };
+  const addCable = () => setCables([...cables, { label: "", sq: sqOptions[0]?.sq, count: 1 }]);
+  const removeCable = (i) => setCables(cables.filter((_, idx) => idx !== i));
+
+  const cableWeightPerM = cables.reduce((sum, c) => {
+    const item = sqOptions.find((s) => s.sq === Number(c.sq));
+    return sum + (item ? item.weightKgPerM : 0) * Number(c.count || 0);
+  }, 0);
+  const rackWeightPerM = rackMatch ? rackMatch.weightKgPerM : 0;
+  const totalWeightPerM = rackWeightPerM + cableWeightPerM;
+
+  const [sent, setSent] = useState(false);
+  const handleSend = () => {
+    try {
+      localStorage.setItem(
+        RACK_WEIGHT_HANDOFF_KEY,
+        JSON.stringify({ rackWeightPerM, cableWeightPerM, savedAt: Date.now() })
+      );
+      setSent(true);
+      setTimeout(() => setSent(false), 3000);
+    } catch {
+      // localStorage不可の環境では何もしない
+    }
+  };
+
+  // --- 保存済み結果（キャッシュ）：ラック耐震支持計算ツールと同じ方式。個人のブラウザ内のみ ---
+  const RACK_WEIGHT_SAVE_KEY = "denki_rack_weight_saved_v1";
+  const loadSavedList = () => {
+    try {
+      const raw = localStorage.getItem(RACK_WEIGHT_SAVE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+  const [savedList, setSavedList] = useState(loadSavedList);
+  const [savedPanelOpen, setSavedPanelOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const persistSavedList = (list) => {
+    setSavedList(list);
+    try {
+      localStorage.setItem(RACK_WEIGHT_SAVE_KEY, JSON.stringify(list));
+    } catch {
+      // 保存領域が使えない場合は画面上のみの一時状態として扱う
+    }
+  };
+  const handleSaveResult = () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const record = {
+      id: `rw_${Date.now()}`,
+      name,
+      savedAt: new Date().toISOString(),
+      inputs: { rackType, series: curSeries, width: curWidth, cables },
+      results: { rackWeightPerM, cableWeightPerM, totalWeightPerM },
+    };
+    persistSavedList([record, ...savedList]);
+    setSaveName("");
+  };
+  const handleLoadResult = (record) => {
+    const i = record.inputs;
+    setRackType(i.rackType);
+    setSeries(i.series);
+    setWidth(i.width);
+    setCables((i.cables || []).map((c) => ({ label: "", ...c })));
+    setSavedPanelOpen(false);
+  };
+  const handleDeleteResult = (id) => {
+    persistSavedList(savedList.filter((r) => r.id !== id));
+  };
+
+  return (
+    <div>
+      <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 mb-4">
+        <p className="text-sm font-semibold text-slate-200 mb-3">ラック仕様</p>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <Field label="仕上げ">
+            <select className={selectCls} value={curSeries} onChange={(e) => setSeries(e.target.value)}>
+              {curSeriesList.map((s) => {
+                const label = RACK_DATA.find((r) => r.type === rackType && r.series === s)?.seriesLabel ?? s;
+                return <option key={s} value={s}>{label}</option>;
+              })}
+            </select>
+          </Field>
+          <Field label="ラック幅">
+            <select className={selectCls} value={curWidth} onChange={(e) => setWidth(Number(e.target.value))}>
+              {curWidths.map((w) => <option key={w} value={w}>{w}mm</option>)}
+            </select>
+          </Field>
+        </div>
+        {rackMatch && (
+          <p className="text-xs text-slate-400">
+            品番：<span className="font-semibold text-slate-200">{rackMatch.partNo}</span>　自重：
+            <span className="font-semibold text-slate-200">{rackMatch.weightKgPerM.toFixed(2)}kg/m</span>
+            <span className="mx-1.5 text-slate-600">|</span>
+            出典：定尺{rackMatch.lengthM}m・単品質量{rackMatch.massKg}kgより算出（ネグロス電工カタログ）
+          </p>
+        )}
+      </div>
+
+      <div className="mb-2">
+        <p className="text-sm font-semibold text-slate-200 mb-2">積載ケーブル</p>
+        {cables.map((c, i) => {
+          const item = sqOptions.find((s) => s.sq === Number(c.sq));
+          return (
+            <div key={i} className="mb-3">
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  className={`${inputCls} min-w-0`}
+                  style={{ flex: "0 0 22%" }}
+                  placeholder="幹線番号"
+                  value={c.label}
+                  onChange={(e) => updateCable(i, "label", e.target.value)}
+                />
+                <select
+                  className={`${selectCls} min-w-0`}
+                  style={{ flex: "0 0 38%" }}
+                  value={c.sq}
+                  onChange={(e) => updateCable(i, "sq", e.target.value)}
+                >
+                  {sqOptions.map((s) => <option key={s.sq} value={s.sq}>{wireSizeLabel(s)}</option>)}
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  max="99"
+                  className={`${inputCls} min-w-0 px-2 text-center`}
+                  style={{ flex: "0 0 18%" }}
+                  value={c.count}
+                  onChange={(e) => updateCable(i, "count", e.target.value)}
+                />
+                <button onClick={() => removeCable(i)} className="p-2.5 rounded-lg bg-slate-800 border border-slate-600 text-slate-400 hover:text-red-400 shrink-0 w-9" aria-label="削除">
+                  <Trash2 size={18} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                単重：<span className="font-semibold text-slate-200">{item?.weightKgPerM?.toFixed(2) ?? "―"}kg/m</span>
+                <span className="mx-1.5 text-slate-600">|</span>
+                CV/CVT・フジクラダイヤケーブル カタログ値
+              </p>
+            </div>
+          );
+        })}
+        <button onClick={addCable} className="flex items-center gap-1.5 text-sm font-medium text-blue-400 mt-1">
+          <Plus size={16} /> ケーブルを追加
+        </button>
+      </div>
+
+      <ResultCard accent="blue">
+        <ResultRow label="ラック自重" value={rackWeightPerM.toFixed(2)} unit="kg/m" />
+        <ResultRow label="積載ケーブル重量" value={cableWeightPerM.toFixed(2)} unit="kg/m" />
+        <ResultRow label="総重量" value={totalWeightPerM.toFixed(2)} unit="kg/m" />
+      </ResultCard>
+
+      <button
+        onClick={handleSend}
+        className="mt-4 flex items-center gap-2 bg-blue-600 text-white text-sm font-semibold rounded-lg px-4 py-2.5 hover:bg-blue-500"
+      >
+        <Send size={16} /> ラック耐震支持計算へ送る
+      </button>
+      {sent && (
+        <p className="text-xs text-blue-400 mt-2">
+          送りました。「ラック耐震支持計算」を開くと反映確認バナーが表示されます。
+        </p>
+      )}
+
+      <p className="text-xs text-slate-400 mt-3">
+        ラック自重はネグロス電工 電設資材カタログ2026-27年版 p.863（QRタイプ 直線ラック）の単品質量から算出した参考値です。
+        ケーブル重量はCV/CVT標準サイズ（フジクラ・ダイヤケーブル カタログ値）のみ対応しており、VVF等他線種の重量データは未整備です。
+        他社製品・他タイプのラックは含まれないため、実際の構成に応じて数値をご確認ください。
+      </p>
+
+      {sidePanelHost && ReactDOM.createPortal(
+        <div className={`rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden transition-all ${paneNarrow ? "w-full" : savedPanelOpen ? "w-72" : "w-11"}`}>
+          <button
+            onClick={() => setSavedPanelOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-3 text-sm font-medium text-slate-200"
+          >
+            {paneNarrow ? (
+              <>
+                <span>保存済み結果（{savedList.length}件）</span>
+                <span className="text-slate-400">{savedPanelOpen ? "閉じる ▲" : "開く ▼"}</span>
+              </>
+            ) : savedPanelOpen ? (
+              <>
+                <span>保存済み結果（{savedList.length}件）</span>
+                <span className="text-slate-400">閉じる ▶</span>
+              </>
+            ) : (
+              <span className="mx-auto text-slate-400 [writing-mode:vertical-rl] flex items-center gap-1">
+                ◀ 保存済み（{savedList.length}）
+              </span>
+            )}
+          </button>
+          {savedPanelOpen && (
+            <div className="px-3 pb-4 border-t border-slate-700">
+              <div className="flex flex-col gap-2 mt-3 mb-3">
+                <input
+                  type="text"
+                  className={`${inputCls}`}
+                  placeholder="名称（例：現場A・K-2）"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                />
+                <button
+                  onClick={handleSaveResult}
+                  disabled={!saveName.trim()}
+                  className="bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg px-3 py-2"
+                >
+                  現在の内容を保存
+                </button>
+              </div>
+              {savedList.length === 0 ? (
+                <p className="text-xs text-slate-500">保存済みの結果はありません。</p>
+              ) : (
+                <ul className="space-y-2">
+                  {savedList.map((r) => (
+                    <li key={r.id} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[11px] font-bold rounded px-1.5 py-0.5 text-blue-300 bg-blue-500/10">
+                          {r.results.totalWeightPerM.toFixed(2)}kg/m
+                        </span>
+                        <span className="text-sm text-slate-200 truncate">{r.name}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mb-2">{new Date(r.savedAt).toLocaleString("ja-JP")}</p>
+                      <div className="flex gap-3">
+                        <button onClick={() => handleLoadResult(r)} className="text-xs font-medium text-blue-400 hover:text-blue-300">読込</button>
+                        <button onClick={() => handleDeleteResult(r.id)} className="text-xs font-medium text-red-400 hover:text-red-300">削除</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>,
+        sidePanelHost
+      )}
+    </div>
+  );
+}
+
 function WiringCalcTool() {
-  const [phase, setPhase] = useState("single");
-  const [voltage, setVoltage] = useState(100);
-  const [current, setCurrent] = useState(15);
-  const [distance, setDistance] = useState(20);
-  const [dropPct, setDropPct] = useState(2);
+  const [phase, setPhase] = usePersistedState("draft:wiring:phase", "single");
+  const [voltage, setVoltage] = usePersistedState("draft:wiring:voltage", 100);
+  const [current, setCurrent] = usePersistedState("draft:wiring:current", 15);
+  const [distance, setDistance] = usePersistedState("draft:wiring:distance", 20);
+  const [dropPct, setDropPct] = usePersistedState("draft:wiring:dropPct", 2);
 
   const k = phase === "single" ? 35.6 : 30.8;
   const e = (Number(voltage) * Number(dropPct)) / 100;
@@ -818,30 +1111,53 @@ function WiringCalcTool() {
 
 function RackSeismicTool() {
   const { host: sidePanelHost, narrow: paneNarrow } = useContext(SidePanelContext) || {};
-  const [cls, setCls] = useState("A");
-  const [floor, setFloor] = useState("mid");
-  const [rackWeight, setRackWeight] = useState(5);
-  const [cableWeight, setCableWeight] = useState(10);
-  const [selfSpan, setSelfSpan] = useState(2.0); // 自重支持間隔（常時荷重用。内線規程準拠でケーブルラックは2.0m以下）
-  const [seismicSpan, setSeismicSpan] = useState(recommendedInterval("A", "mid")); // 耐震支持間隔
-  const [khOverride, setKhOverride] = useState(""); // 現場条件により任意入力可
-  const [bracketType, setBracketType] = useState("custom"); // "custom"=自作架台 / "product"=既製品ブラケット
-  const [allowable, setAllowable] = useState("");
+  const [cls, setCls] = usePersistedState("draft:seismic:cls", "A");
+  const [floor, setFloor] = usePersistedState("draft:seismic:floor", "mid");
+  const [rackWeight, setRackWeight] = usePersistedState("draft:seismic:rackWeight", 5);
+  const [cableWeight, setCableWeight] = usePersistedState("draft:seismic:cableWeight", 10);
+
+  // ラック重量計算ツールからの引き継ぎ（片方向・明示反映方式。自動連動はしない）
+  const [handoff, setHandoff] = useState(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(RACK_WEIGHT_HANDOFF_KEY);
+      if (raw) setHandoff(JSON.parse(raw));
+    } catch {
+      // 破損データは無視
+    }
+  }, []);
+  const applyHandoff = () => {
+    if (!handoff) return;
+    setRackWeight(Number(handoff.rackWeightPerM.toFixed(2)));
+    setCableWeight(Number(handoff.cableWeightPerM.toFixed(2)));
+    localStorage.removeItem(RACK_WEIGHT_HANDOFF_KEY);
+    setHandoff(null);
+  };
+  const dismissHandoff = () => {
+    localStorage.removeItem(RACK_WEIGHT_HANDOFF_KEY);
+    setHandoff(null);
+  };
+
+  const [selfSpan, setSelfSpan] = usePersistedState("draft:seismic:selfSpan", 2.0); // 自重支持間隔（常時荷重用。内線規程準拠でケーブルラックは2.0m以下）
+  const [seismicSpan, setSeismicSpan] = usePersistedState("draft:seismic:seismicSpan", recommendedInterval("A", "mid")); // 耐震支持間隔
+  const [khOverride, setKhOverride] = usePersistedState("draft:seismic:khOverride", ""); // 現場条件により任意入力可
+  const [bracketType, setBracketType] = usePersistedState("draft:seismic:bracketType", "custom"); // "custom"=自作架台 / "product"=既製品ブラケット
+  const [allowable, setAllowable] = usePersistedState("draft:seismic:allowable", "");
   const [showReport, setShowReport] = useState(false);
-  const [projectName, setProjectName] = useState("");
-  const [author, setAuthor] = useState("");
-  const [docDate, setDocDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [angleSize, setAngleSize] = useState("50×50×6");
-  const [materialGrade, setMaterialGrade] = useState("SS400");
-  const [angleCount, setAngleCount] = useState(2); // 吊り材の本数（1ブラケットあたり）
-  const [dropLength, setDropLength] = useState(300); // スラブからガセットプレートまでの腕の長さ(mm)
-  const [structModel, setStructModel] = useState("frame"); // "frame"=上下固定(反曲点法) / "cantilever"=片持ち
-  const [boltSize, setBoltSize] = useState("M12");
-  const [boltsPerLeg, setBoltsPerLeg] = useState(2);
-  const [boltSpacing, setBoltSpacing] = useState(150); // アンカーボルト間隔(mm)＝引張力の腕
-  const [plateBc, setPlateBc] = useState(100); // 圧縮側の負担幅(mm)
-  const [plateL, setPlateL] = useState(40); // 圧縮側の片持ち長さ(mm)
-  const [plateEdge, setPlateEdge] = useState(20); // 引張側：縁端からボルト中心までの長さℓ(mm)
+  const [projectName, setProjectName] = usePersistedState("draft:seismic:projectName", "");
+  const [author, setAuthor] = usePersistedState("draft:seismic:author", "");
+  const [docDate, setDocDate] = usePersistedState("draft:seismic:docDate", () => new Date().toISOString().slice(0, 10));
+  const [angleSize, setAngleSize] = usePersistedState("draft:seismic:angleSize", "50×50×6");
+  const [materialGrade, setMaterialGrade] = usePersistedState("draft:seismic:materialGrade", "SS400");
+  const [angleCount, setAngleCount] = usePersistedState("draft:seismic:angleCount", 2); // 吊り材の本数（1ブラケットあたり）
+  const [dropLength, setDropLength] = usePersistedState("draft:seismic:dropLength", 300); // スラブからガセットプレートまでの腕の長さ(mm)
+  const [structModel, setStructModel] = usePersistedState("draft:seismic:structModel", "frame"); // "frame"=上下固定(反曲点法) / "cantilever"=片持ち
+  const [boltSize, setBoltSize] = usePersistedState("draft:seismic:boltSize", "M12");
+  const [boltsPerLeg, setBoltsPerLeg] = usePersistedState("draft:seismic:boltsPerLeg", 2);
+  const [boltSpacing, setBoltSpacing] = usePersistedState("draft:seismic:boltSpacing", 150); // アンカーボルト間隔(mm)＝引張力の腕
+  const [plateBc, setPlateBc] = usePersistedState("draft:seismic:plateBc", 100); // 圧縮側の負担幅(mm)
+  const [plateL, setPlateL] = usePersistedState("draft:seismic:plateL", 40); // 圧縮側の片持ち長さ(mm)
+  const [plateEdge, setPlateEdge] = usePersistedState("draft:seismic:plateEdge", 20); // 引張側：縁端からボルト中心までの長さℓ(mm)
 
   const khTable = SEISMIC_KH[cls][floor];
   const kh = khOverride !== "" ? Number(khOverride) : khTable;
@@ -1289,6 +1605,25 @@ function RackSeismicTool() {
 
   return (
     <div>
+      {handoff && (
+        <div className="rounded-xl border border-blue-500/40 bg-blue-500/10 p-4 mb-4">
+          <p className="text-sm font-semibold text-blue-200 mb-1">ラック重量計算ツールからの引き継ぎがあります</p>
+          <p className="text-xs text-slate-300 mb-3">
+            自重：<span className="font-semibold">{handoff.rackWeightPerM.toFixed(2)}kg/m</span>
+            <span className="mx-1.5 text-slate-600">|</span>
+            積載ケーブル質量：<span className="font-semibold">{handoff.cableWeightPerM.toFixed(2)}kg/m</span>
+          </p>
+          <div className="flex gap-2">
+            <button onClick={applyHandoff} className="bg-blue-600 text-white text-sm font-semibold rounded-lg px-3 py-1.5 hover:bg-blue-500">
+              反映する
+            </button>
+            <button onClick={dismissHandoff} className="flex items-center gap-1 text-sm text-slate-400 rounded-lg px-3 py-1.5 hover:text-slate-200">
+              <X size={14} /> 今回は使わない
+            </button>
+          </div>
+        </div>
+      )}
+
       <Field label="耐震クラス">
         <select className={selectCls} value={cls} onChange={(e) => setCls(e.target.value)}>
           <option value="S">S種（特に重要な設備）</option>
@@ -1677,6 +2012,7 @@ const TOOLS = {
     { id: "occupancy", name: "配管サイズ計算ツール", desc: "配管に入るケーブル本数を判定", icon: PieChart, Comp: OccupancyTool },
     { id: "penetration-occupancy", name: "占積率計算ツール", desc: "貫通穴に対するケーブルの占積率を判定", icon: Target, Comp: PenetrationOccupancyTool },
     { id: "wiring", name: "電気配線計算ツール", desc: "電圧降下・幹線サイズをまとめて計算", icon: Plug, Comp: WiringCalcTool },
+    { id: "rack-weight", name: "ラック重量計算", desc: "ラック自重とケーブル重量から総重量(kg/m)を算出", icon: Weight, Comp: RackWeightTool },
     { id: "rack-seismic", name: "ラック耐震支持計算", desc: "耐震クラス・設置階から地震力を判定し計算書を作成", icon: ShieldCheck, Comp: RackSeismicTool },
   ],
 };

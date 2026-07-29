@@ -46,7 +46,9 @@ function parseCSV(text) {
 }
 
 function csvToObjects(text) {
-  const rows = parseCSV(text);
+  // Excelで「CSV UTF-8」として保存するとファイル先頭にBOM(\uFEFF)が付くため、あれば取り除く
+  const clean = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const rows = parseCSV(clean);
   const header = rows[0];
   return rows.slice(1).map((r) => {
     const obj = {};
@@ -104,4 +106,66 @@ function genWireData() {
   console.log(`✓ ${path.relative(ROOT, outPath)} を生成しました（${records.length}行 / ${wireTypes.length}線種）`);
 }
 
+// ---- STANDARD_WIRE_SIZES 生成（電気配線計算ツール／幹線サイズ用） ----
+function genStandardWireSizes() {
+  const csvPath = path.join(ROOT, "src/data-source/standardWireSizes.csv");
+  const outPath = path.join(ROOT, "src/data/wiringCalcData.js");
+  const records = csvToObjects(readFileSync(csvPath, "utf-8"));
+
+  const lines = [];
+  lines.push("// 【自動生成ファイル】直接編集しないこと");
+  lines.push("// 生成元：src/data-source/standardWireSizes.csv （編集はこちらのCSVで行う）");
+  lines.push("// 再生成：node scripts/gen-data.js");
+  lines.push("// 電線の公称断面積 標準サイズ 出典：JIS C 3307（IV電線）/ 内線規程（IV・HIV・CV等の共通シリーズ）");
+  lines.push("// ※IEC 60228（欧州規格）の断面積シリーズとは異なるので注意");
+  lines.push("// 現場慣用の単位「sq」（スケア）で保持。小サイズ（2/3.5/5.5sq）はFケーブル/VVFの導体径(mm)表記も併記");
+  lines.push("// weightKgPerM：1mあたりの電線重量(kg/m)。未確認の値は空欄（=undefined）のまま。想像値は入れないこと");
+  lines.push("export const STANDARD_WIRE_SIZES = [");
+  for (const rec of records) {
+    const { sq, mmPhi, weightKgPerM, source } = rec;
+    if (!sq) continue;
+    const fields = [`sq: ${Number(sq)}`];
+    if (mmPhi) fields.push(`mmPhi: ${Number(mmPhi)}`);
+    if (weightKgPerM) fields.push(`weightKgPerM: ${Number(weightKgPerM)}`);
+    const comment = source ? ` // ${source}` : "";
+    lines.push(`  { ${fields.join(", ")} },${comment}`);
+  }
+  lines.push("];");
+  lines.push("");
+  lines.push('// 表示ラベル生成：小サイズは「2sq（1.6mm）」、それ以外は「14sq」の形式');
+  lines.push('export const wireSizeLabel = (item) => (item.mmPhi ? `${item.sq}sq（${item.mmPhi}mm）` : `${item.sq}sq`);');
+  lines.push("");
+
+  writeFileSync(outPath, lines.join("\n"), "utf-8");
+  console.log(`✓ ${path.relative(ROOT, outPath)} を生成しました（${records.length}行）`);
+}
+
+// ---- RACK_DATA 生成（ケーブルラック本体重量／ラック重量計算ツール用） ----
+function genRackData() {
+  const csvPath = path.join(ROOT, "src/data-source/rackData.csv");
+  const outPath = path.join(ROOT, "src/data/rackData.js");
+  const records = csvToObjects(readFileSync(csvPath, "utf-8"));
+
+  const lines = [];
+  lines.push("// 【自動生成ファイル】直接編集しないこと");
+  lines.push("// 生成元：src/data-source/rackData.csv （編集はこちらのCSVで行う）");
+  lines.push("// 再生成：node scripts/gen-data.js");
+  lines.push("// ケーブルラック本体の1mあたり重量。カタログの「単品質量(kg)」は定尺(lengthM)ごとの値なので");
+  lines.push("// weightKgPerM = massKg / lengthM で算出（元の質量・定尺はそのまま保持し、追跡可能にしている）");
+  lines.push("export const RACK_DATA = [");
+  for (const rec of records) {
+    const { type, series, seriesLabel, partNo, width, lengthM, massKg, source } = rec;
+    if (!partNo) continue;
+    const weightKgPerM = Number(massKg) / Number(lengthM);
+    lines.push(`  { type: ${JSON.stringify(type)}, series: ${JSON.stringify(series)}, seriesLabel: ${JSON.stringify(seriesLabel)}, partNo: ${JSON.stringify(partNo)}, width: ${Number(width)}, lengthM: ${Number(lengthM)}, massKg: ${Number(massKg)}, weightKgPerM: ${weightKgPerM.toFixed(3)} }, // ${source}`);
+  }
+  lines.push("];");
+  lines.push("");
+
+  writeFileSync(outPath, lines.join("\n"), "utf-8");
+  console.log(`✓ ${path.relative(ROOT, outPath)} を生成しました（${records.length}行）`);
+}
+
 genWireData();
+genStandardWireSizes();
+genRackData();
