@@ -817,7 +817,7 @@ function WiringCalcTool() {
 }
 
 function RackSeismicTool() {
-  const sidePanelHost = useContext(SidePanelContext);
+  const { host: sidePanelHost, narrow: paneNarrow } = useContext(SidePanelContext) || {};
   const [cls, setCls] = useState("A");
   const [floor, setFloor] = useState("mid");
   const [rackWeight, setRackWeight] = useState(5);
@@ -937,23 +937,6 @@ function RackSeismicTool() {
   };
   const [savedList, setSavedList] = useState(loadSavedList);
   const [savedPanelOpen, setSavedPanelOpen] = useState(false);
-  const [paneNarrow, setPaneNarrow] = useState(false); // 右ペインの実寸が狭い時は自動でパネルを閉じる
-
-  // 右ペインの実寸を監視し、狭い時は自動でパネルを閉じる（ブラウザ全体の幅ではなく、
-  // 実際にサイドバーと本文が共有しているコンテナの幅を見る）
-  useEffect(() => {
-    if (!sidePanelHost || !sidePanelHost.parentElement) return;
-    const NARROW_THRESHOLD = 780;
-    const target = sidePanelHost.parentElement;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect?.width ?? 0;
-      const narrow = w < NARROW_THRESHOLD;
-      setPaneNarrow(narrow);
-      if (narrow) setSavedPanelOpen(false);
-    });
-    ro.observe(target);
-    return () => ro.disconnect();
-  }, [sidePanelHost]);
   const [saveName, setSaveName] = useState("");
   const persistSavedList = (list) => {
     setSavedList(list);
@@ -1608,14 +1591,17 @@ function RackSeismicTool() {
       </p>
 
       {sidePanelHost && ReactDOM.createPortal(
-        <div className={`rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden transition-all ${savedPanelOpen ? "w-72" : "w-11"}`}>
+        <div className={`rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden transition-all ${paneNarrow ? "w-full" : savedPanelOpen ? "w-72" : "w-11"}`}>
           <button
-            onClick={() => !paneNarrow && setSavedPanelOpen((v) => !v)}
-            disabled={paneNarrow}
-            title={paneNarrow ? "画面（ペイン）を広げると開けます" : undefined}
-            className={`w-full flex items-center justify-between px-3 py-3 text-sm font-medium text-slate-200 ${paneNarrow ? "opacity-50 cursor-not-allowed" : ""}`}
+            onClick={() => setSavedPanelOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-3 text-sm font-medium text-slate-200"
           >
-            {savedPanelOpen ? (
+            {paneNarrow ? (
+              <>
+                <span>保存済み結果（{savedList.length}件）</span>
+                <span className="text-slate-400">{savedPanelOpen ? "閉じる ▲" : "開く ▼"}</span>
+              </>
+            ) : savedPanelOpen ? (
               <>
                 <span>保存済み結果（{savedList.length}件）</span>
                 <span className="text-slate-400">閉じる ▶</span>
@@ -1706,8 +1692,22 @@ export default function App() {
   const [navOpen, setNavOpen] = useState(false); // モバイル用：左ペインの開閉
   const [leftWidth, setLeftWidth] = useState(288);
   const [sidePanelHost, setSidePanelHost] = useState(null);
+  const [paneNarrow, setPaneNarrow] = useState(false); // 本文＋サイドパネルの共有コンテナが狭い（≒スマホ幅）時はサイドパネルを下に回す
   const containerRef = React.useRef(null);
   const draggingRef = React.useRef(false);
+
+  // 右ペインの実寸を監視（ブラウザ全体の幅ではなく、実際に本文とサイドパネルが共有しているコンテナの幅を見る）
+  useEffect(() => {
+    if (!sidePanelHost || !sidePanelHost.parentElement) return;
+    const NARROW_THRESHOLD = 780;
+    const target = sidePanelHost.parentElement;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width ?? 0;
+      setPaneNarrow(w < NARROW_THRESHOLD);
+    });
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [sidePanelHost]);
 
   const switchCategory = (cat) => {
     setCategory(cat);
@@ -1858,7 +1858,7 @@ export default function App() {
 
         {/* ===== 右ペイン（独立ウインドウ・独立スクロール） ===== */}
         <main className="flex-1 min-w-0 rounded-xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/30 overflow-y-auto">
-          <div className="flex items-start">
+          <div className={`flex ${paneNarrow ? "flex-col" : "items-start"}`}>
             <div className="flex-1 min-w-0">
               <div className="max-w-2xl mx-auto px-6 py-6">
                 {currentTool && (
@@ -1869,15 +1869,18 @@ export default function App() {
                     </div>
                     <h2 className="text-xl font-bold mb-1">{currentTool.name}</h2>
                     <p className="text-sm text-slate-400 mb-6">{currentTool.desc}</p>
-                    <SidePanelContext.Provider value={sidePanelHost}>
+                    <SidePanelContext.Provider value={{ host: sidePanelHost, narrow: paneNarrow }}>
                       <currentTool.Comp />
                     </SidePanelContext.Provider>
                   </>
                 )}
               </div>
             </div>
-            {/* ツール個別サイドパネルのドック先。中身が無ければ幅0で見た目に影響しない */}
-            <div ref={setSidePanelHost} className="shrink-0 sticky top-6 py-6 pr-6" />
+            {/* ツール個別サイドパネルのドック先。狭い時は本文の下に全幅で回す。中身が無ければ幅0で見た目に影響しない */}
+            <div
+              ref={setSidePanelHost}
+              className={paneNarrow ? "w-full px-6 pb-6" : "shrink-0 sticky top-6 py-6 pr-6"}
+            />
           </div>
         </main>
 
