@@ -18,6 +18,7 @@ import {
   ANCHOR_BOLT_DATA, BOLT_FT_SHORT, BOLT_FS_SHORT,
   SEISMIC_KH, FLOOR_LABEL, CLASS_LABEL, CABLE_RACK_SEISMIC_INTERVAL, recommendedInterval,
   RACK_DATA,
+  CABLE_WEIGHT_DATA, cableWeightLabel,
 } from "./data";
 
 /* ============================== UI 部品 ============================== */
@@ -944,15 +945,17 @@ function RackWeightTool() {
   const curWidth = curWidths.includes(width) ? width : curWidths[0];
   const rackMatch = RACK_DATA.find((r) => r.type === rackType && r.series === curSeries && r.width === curWidth);
 
-  // 重量データがあるのは現状 STANDARD_WIRE_SIZES 側（sq軸・CV/CVT想定）のみ
-  const sqOptions = STANDARD_WIRE_SIZES.filter((s) => s.weightKgPerM !== undefined);
-  const [cables, setCables] = usePersistedState("draft:rackWeight:cables", [{ label: "", sq: sqOptions[0]?.sq, count: 1 }]);
+  // 重量データは線種(type)×心数(cores)×sq。未確認（weightKgPerM未入力）の行は選択肢に出さない
+  const cableOptions = CABLE_WEIGHT_DATA.filter((c) => c.weightKgPerM !== undefined);
+  const cableKeyOf = (c) => `${c.type}|${c.cores}|${c.sq}`;
+  const findCableByKey = (key) => cableOptions.find((c) => cableKeyOf(c) === key);
+  const [cables, setCables] = usePersistedState("draft:rackWeight:cables", [{ label: "", cableKey: cableKeyOf(cableOptions[0]), count: 1 }]);
   const updateCable = (i, key, val) => {
     const next = [...cables];
     next[i] = { ...next[i], [key]: val };
     setCables(next);
   };
-  const addCable = () => setCables([...cables, { label: "", sq: sqOptions[0]?.sq, count: 1 }]);
+  const addCable = () => setCables([...cables, { label: "", cableKey: cableKeyOf(cableOptions[0]), count: 1 }]);
   const removeCable = (i) => setCables(cables.filter((_, idx) => idx !== i));
 
   const resetInputs = () => {
@@ -960,11 +963,11 @@ function RackWeightTool() {
     setRackType(rackTypes[0]);
     setSeries(seriesFor(rackTypes[0])[0]);
     setWidth(widthsFor(rackTypes[0], seriesFor(rackTypes[0])[0])[0]);
-    setCables([{ label: "", sq: sqOptions[0]?.sq, count: 1 }]);
+    setCables([{ label: "", cableKey: cableKeyOf(cableOptions[0]), count: 1 }]);
   };
 
   const cableWeightPerM = cables.reduce((sum, c) => {
-    const item = sqOptions.find((s) => s.sq === Number(c.sq));
+    const item = findCableByKey(c.cableKey);
     return sum + (item ? item.weightKgPerM : 0) * Number(c.count || 0);
   }, 0);
   const rackWeightPerM = rackMatch ? rackMatch.weightKgPerM : 0;
@@ -1023,7 +1026,11 @@ function RackWeightTool() {
     setRackType(i.rackType);
     setSeries(i.series);
     setWidth(i.width);
-    setCables((i.cables || []).map((c) => ({ label: "", ...c })));
+    setCables((i.cables || []).map((c) => ({
+      label: "",
+      ...c,
+      cableKey: c.cableKey ?? (c.sq ? `CVT|3|${c.sq}` : cableKeyOf(cableOptions[0])),
+    })));
     setSavedPanelOpen(false);
   };
   const handleDeleteResult = (id) => {
@@ -1068,7 +1075,7 @@ function RackWeightTool() {
       <div className="mb-2">
         <p className="text-sm font-semibold text-slate-200 mb-2">積載ケーブル</p>
         {cables.map((c, i) => {
-          const item = sqOptions.find((s) => s.sq === Number(c.sq));
+          const item = findCableByKey(c.cableKey);
           return (
             <div key={i} className="mb-3">
               <div className="flex gap-2 items-center">
@@ -1083,10 +1090,12 @@ function RackWeightTool() {
                 <select
                   className={`${selectCls} min-w-0`}
                   style={{ flex: "0 0 38%" }}
-                  value={c.sq}
-                  onChange={(e) => updateCable(i, "sq", e.target.value)}
+                  value={c.cableKey}
+                  onChange={(e) => updateCable(i, "cableKey", e.target.value)}
                 >
-                  {sqOptions.map((s) => <option key={s.sq} value={s.sq}>{wireSizeLabel(s)}</option>)}
+                  {cableOptions.map((opt) => (
+                    <option key={cableKeyOf(opt)} value={cableKeyOf(opt)}>{cableWeightLabel(opt)}</option>
+                  ))}
                 </select>
                 <input
                   type="number"
@@ -1104,7 +1113,7 @@ function RackWeightTool() {
               <p className="text-xs text-slate-400 mt-1">
                 単重：<span className="font-semibold text-slate-200">{item?.weightKgPerM?.toFixed(2) ?? "―"}kg/m</span>
                 <span className="mx-1.5 text-slate-600">|</span>
-                CV/CVT・フジクラダイヤケーブル カタログ値
+                フジクラダイヤケーブル カタログ値
               </p>
             </div>
           );
@@ -1134,7 +1143,7 @@ function RackWeightTool() {
 
       <p className="text-xs text-slate-400 mt-3">
         ラック自重はネグロス電工 電設資材カタログ2026-27年版 p.863（QRタイプ 直線ラック）の単品質量から算出した参考値です。
-        ケーブル重量はCV/CVT標準サイズ（フジクラ・ダイヤケーブル カタログ値）のみ対応しており、VVF等他線種の重量データは未整備です。
+        ケーブル重量はCVT（フジクラ・ダイヤケーブル カタログ値）のみ重量確認済みです。CV（1〜4心）は選択肢はありますが重量データ未確認のため、確認が取れ次第追加します。VVF等他線種の重量データも未整備です。
         他社製品・他タイプのラックは含まれないため、実際の構成に応じて数値をご確認ください。
       </p>
 
@@ -1413,6 +1422,71 @@ function RackSeismicTool() {
   const plateCompRatio = sigmaBComp / fb1Short;
   const plateTensRatio = sigmaBTens / fb1Short;
   const plateJudge = plateCompRatio <= 1.0 && plateTensRatio <= 1.0 ? "OK" : "NG";
+
+  // --- 板厚検討NG時の代替候補（アングルサイズ／鋼材種別／ボルト径。いずれも単独変更で判定できる） ---
+  // 注意：この検討式に効くのはこの3項目のみ（ボルト本数・支持間隔等は影響しない）。
+  // ただしアングルサイズの変更は①吊り材本体の検定にも影響するため、候補には注記を付ける。
+  const evaluatePlateOption = (angleSizeStr, materialGradeStr, boltSizeStr) => {
+    const angle = ANGLE_STEEL_DATA.find((a) => a.size === angleSizeStr);
+    const mat = MATERIAL_GRADES.find((m) => m.grade === materialGradeStr) ?? MATERIAL_GRADES[0];
+    if (!angle) return null;
+    const parts = angle.size.split("×").map(Number);
+    const D = parts[0], t = parts[2];
+    const fb1S = (mat.F / 1.3) * 1.5;
+    const bPhi = Number(boltSizeStr.replace("M", ""));
+
+    const plateArea = Number(plateBc || 1) * D;
+    const sigmaCPlate = (T_perBolt_kN * 1000) / plateArea;
+    const mComp = (sigmaCPlate * Number(plateL || 0) * Number(plateL || 0)) / 2;
+    const zC = (t * t) / 6;
+    const sigmaBC = mComp / zC;
+
+    const btW = 2 * Number(plateEdge || 0) + (bPhi + 2);
+    const mTens = T_perBolt_kN * 1000 * Number(plateEdge || 0);
+    const zT = (btW * t * t) / 6;
+    const sigmaBT = mTens / zT;
+
+    const compRatio = sigmaBC / fb1S;
+    const tensRatio = sigmaBT / fb1S;
+    return { compRatio, tensRatio, ok: compRatio <= 1.0 && tensRatio <= 1.0 };
+  };
+
+  const boltSizeOrder = ["M10", "M12", "M16", "M20"];
+
+  const plateSuggestions = (() => {
+    if (plateJudge !== "NG") return null;
+    const suggestions = [];
+
+    // 候補①：アングルサイズを上げる（現在の鋼材・ボルト径のまま）
+    const curAngleIdx = ANGLE_STEEL_DATA.findIndex((a) => a.size === angleSize);
+    for (let i = curAngleIdx + 1; i < ANGLE_STEEL_DATA.length; i++) {
+      const candidate = ANGLE_STEEL_DATA[i].size;
+      const r = evaluatePlateOption(candidate, materialGrade, boltSize);
+      if (r?.ok) {
+        suggestions.push({ type: "angle", label: `アングルサイズを ${candidate} に変更`, note: "※①吊り材本体の検定にも影響するため、変更後は①も再確認してください" });
+        break;
+      }
+    }
+
+    // 候補②：鋼材種別をSM490に変更（現在の鋼材が既にSM490なら候補なし）
+    if (materialGrade !== "SM490") {
+      const r = evaluatePlateOption(angleSize, "SM490", boltSize);
+      if (r?.ok) suggestions.push({ type: "material", label: "鋼材種別を SM490 に変更", note: null });
+    }
+
+    // 候補③：ボルト径を上げる（現在のアングル・鋼材のまま）
+    const curBoltIdx = boltSizeOrder.indexOf(boltSize);
+    for (let i = curBoltIdx + 1; i < boltSizeOrder.length; i++) {
+      const candidate = boltSizeOrder[i];
+      const r = evaluatePlateOption(angleSize, materialGrade, candidate);
+      if (r?.ok) {
+        suggestions.push({ type: "bolt", label: `ボルト径を ${candidate} に変更`, note: null });
+        break;
+      }
+    }
+
+    return suggestions;
+  })();
 
   // --- 保存済み結果（キャッシュ）：個人のブラウザ内のみに保存する一時メモ。git管理対象のデータとは別物 ---
   const SAVE_KEY = "denki_rack_seismic_saved_v1";
@@ -2011,13 +2085,13 @@ function RackSeismicTool() {
           <circle cx="120" cy="12" r="4" fill="#94a3b8" />
           <line x1="200" y1="10" x2="200" y2="40" stroke="#94a3b8" strokeWidth="3" />
           <circle cx="200" cy="12" r="4" fill="#94a3b8" />
-          <text x="223" y="20" fontSize="9" fill="#94a3b8">アンカーボルト×2</text>
-          <line x1="221" y1="17" x2="204" y2="14" stroke="#94a3b8" strokeWidth="1" />
-          <line x1="221" y1="17" x2="124" y2="14" stroke="#94a3b8" strokeWidth="1" />
+          <text x="300" y="20" fontSize="9" fill="#94a3b8" textAnchor="end">アンカーボルト×2</text>
+          <line x1="296" y1="17" x2="204" y2="14" stroke="#94a3b8" strokeWidth="1" />
+          <line x1="296" y1="17" x2="124" y2="14" stroke="#94a3b8" strokeWidth="1" />
 
-          <rect x="148" y="40" width="16" height="95" fill="#64748b" />
-          <text x="245" y="90" fontSize="9" fill="#94a3b8">吊り材（アングル本体）</text>
-          <line x1="243" y1="86" x2="166" y2="80" stroke="#94a3b8" strokeWidth="1" />
+          <rect x="152" y="40" width="16" height="95" fill="#64748b" />
+          <text x="300" y="90" fontSize="9" fill="#94a3b8" textAnchor="end">吊り材（アングル本体）</text>
+          <line x1="298" y1="86" x2="167" y2="80" stroke="#94a3b8" strokeWidth="1" />
 
           <text x="90" y="185" fontSize="8" fill="#64748b">フランジ（アングルの脚）＝ここの局所曲げを検討</text>
         </svg>
@@ -2078,6 +2152,29 @@ function RackSeismicTool() {
         <p className="text-xs text-slate-400 mt-2">
           圧縮側は分布圧力による片持ちモデル、引張側はボルト位置の集中荷重による片持ちモデルで簡易算定しています。
         </p>
+
+        {plateJudge === "NG" && (
+          <div className="rounded-lg border border-slate-700 bg-slate-900/60 p-3 mt-3">
+            <span className="block text-sm font-medium text-slate-300 mb-1.5">板厚検討のみを解消する代替候補</span>
+            {plateSuggestions && plateSuggestions.length > 0 ? (
+              <ul className="space-y-1.5">
+                {plateSuggestions.map((s, idx) => (
+                  <li key={idx} className="text-sm text-slate-200">
+                    ・{s.label}
+                    {s.note && <span className="block text-[11px] text-amber-300/90 mt-0.5">{s.note}</span>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-amber-300">
+                アングルサイズ・鋼材種別（SS400/SM490）・ボルト径の候補範囲内では解消しません。板の負担幅Bc・片持ち長さL・縁端距離ℓ等、現場寸法側の見直しをご検討ください。
+              </p>
+            )}
+            <p className="text-[11px] text-slate-500 mt-2">
+              いずれも他の項目は現状のまま、1つだけ変更した場合の参考候補です。実際の在庫・納まりに応じてご確認ください。
+            </p>
+          </div>
+        )}
       </div>
         </>
       )}

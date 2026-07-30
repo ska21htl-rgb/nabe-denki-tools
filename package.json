@@ -4,10 +4,13 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/gen-data.js",
     "dev": "vite",
+    "prebuild": "node scripts/gen-data.js",
     "build": "vite build",
     "build:gas": "vite build --config vite.config.gas.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:data": "node scripts/gen-data.js"
   },
   "dependencies": {
     "lucide-react": "^0.383.0",

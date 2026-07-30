@@ -166,6 +166,42 @@ function genRackData() {
   console.log(`✓ ${path.relative(ROOT, outPath)} を生成しました（${records.length}行）`);
 }
 
+// ---- CABLE_WEIGHT_DATA 生成（線種×心数×sq。ラック重量計算ツール用） ----
+// STANDARD_WIRE_SIZES（電気配線計算ツール用・sqのみ）とは別物。重量は心数で大きく変わるため分離している。
+function genCableWeightData() {
+  const csvPath = path.join(ROOT, "src/data-source/cableWeightData.csv");
+  const outPath = path.join(ROOT, "src/data/cableWeightData.js");
+  const records = csvToObjects(readFileSync(csvPath, "utf-8"));
+
+  const lines = [];
+  lines.push("// 【自動生成ファイル】直接編集しないこと");
+  lines.push("// 生成元：src/data-source/cableWeightData.csv （編集はこちらのCSVで行う）");
+  lines.push("// 再生成：node scripts/gen-data.js");
+  lines.push("// ラック重量計算ツール専用の1mあたりケーブル重量。線種(type)×心数(cores)×sqで管理。");
+  lines.push("// STANDARD_WIRE_SIZES（電気配線計算ツール用）とは別データ：重量は心数で大きく変わるため統合していない。");
+  lines.push("// weightKgPerMが空欄の行は未確認データ。想像値は入れないこと。");
+  lines.push("export const CABLE_WEIGHT_DATA = [");
+  for (const rec of records) {
+    const { type, cores, sq, weightKgPerM, source } = rec;
+    if (!type || !sq) continue;
+    const fields = [`type: ${JSON.stringify(type)}`, `cores: ${Number(cores)}`, `sq: ${Number(sq)}`];
+    if (weightKgPerM) fields.push(`weightKgPerM: ${Number(weightKgPerM)}`);
+    const comment = source ? ` // ${source}` : "";
+    lines.push(`  { ${fields.join(", ")} },${comment}`);
+  }
+  lines.push("];");
+  lines.push("");
+  lines.push('// 表示ラベル：CVTは3心が標準的な意味を持つため心数を省略（例「CVT 14sq」）、');
+  lines.push('// それ以外は心数を明記する（例「CV14sq-3C」）');
+  lines.push("export const cableWeightLabel = (item) =>");
+  lines.push('  item.type === "CVT" ? `CVT ${item.sq}sq` : `${item.type}${item.sq}sq-${item.cores}C`;');
+  lines.push("");
+
+  writeFileSync(outPath, lines.join("\n"), "utf-8");
+  console.log(`✓ ${path.relative(ROOT, outPath)} を生成しました（${records.length}行）`);
+}
+
 genWireData();
 genStandardWireSizes();
 genRackData();
+genCableWeightData();
