@@ -1219,6 +1219,7 @@ function RackWeightTool() {
 }
 
 function RackWidthTool() {
+  const { host: sidePanelHost, narrow: paneNarrow } = useContext(SidePanelContext) || {};
   const wireTypes = Object.keys(WIRE_DATA);
   const [cables, setCables] = usePersistedState("draft:rackWidth:cables", [
     { wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 },
@@ -1232,14 +1233,14 @@ function RackWidthTool() {
   const addCable = () => setCables([...cables, { wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
   const removeCable = (i) => setCables(cables.filter((_, idx) => idx !== i));
 
-  const [k, setK] = usePersistedState("draft:rackWidth:k", 1.0);
-  const [a, setA] = usePersistedState("draft:rackWidth:a", 0);
+  const [k, setK] = usePersistedState("draft:rackWidth:k", 1.2);
+  const [a, setA] = usePersistedState("draft:rackWidth:a", 60);
 
   const resetInputs = () => {
     if (!window.confirm("入力内容をリセットしますか？")) return;
     setCables([{ wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
-    setK(1.0);
-    setA(0);
+    setK(1.2);
+    setA(60);
   };
 
   // D：電線の外径(mm)。丸形はそのまま、平形(VVF等)は幅wを使用（ラック上で占める幅の方向のため）
@@ -1258,6 +1259,51 @@ function RackWidthTool() {
   // 参考：ネグロスQRタイプの標準幅の中から、計算値W以上で最小のものを提示
   const standardWidths = [...new Set(RACK_DATA.map((r) => r.width))].sort((x, y) => x - y);
   const nearestStandard = standardWidths.find((w) => w >= width);
+
+  // --- 保存済み結果（キャッシュ）：他ツールと同じ方式。個人のブラウザ内のみに保存する一時メモ ---
+  const RACK_WIDTH_SAVE_KEY = "denki_rack_width_saved_v1";
+  const loadSavedList = () => {
+    try {
+      const raw = localStorage.getItem(RACK_WIDTH_SAVE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+  const [savedList, setSavedList] = useState(loadSavedList);
+  const [savedPanelOpen, setSavedPanelOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const persistSavedList = (list) => {
+    setSavedList(list);
+    try {
+      localStorage.setItem(RACK_WIDTH_SAVE_KEY, JSON.stringify(list));
+    } catch {
+      // 保存領域が使えない場合は画面上のみの一時状態として扱う
+    }
+  };
+  const handleSaveResult = () => {
+    const name = saveName.trim();
+    if (!name) return;
+    const record = {
+      id: `rw2_${Date.now()}`,
+      name,
+      savedAt: new Date().toISOString(),
+      inputs: { cables, k, a },
+      results: { sumD10, width, nearestStandard },
+    };
+    persistSavedList([record, ...savedList]);
+    setSaveName("");
+  };
+  const handleLoadResult = (record) => {
+    const i = record.inputs;
+    setCables(i.cables);
+    setK(i.k);
+    setA(i.a);
+    setSavedPanelOpen(false);
+  };
+  const handleDeleteResult = (id) => {
+    persistSavedList(savedList.filter((r) => r.id !== id));
+  };
 
   return (
     <div>
@@ -1342,8 +1388,75 @@ function RackWidthTool() {
 
       <p className="text-xs text-slate-400 mt-3">
         計算式：W ≧ K{"｛"}Σ(D+10){"｝"}+a　（D：各ケーブルの外径mm。平形ケーブルは幅wを使用）。
-        Kとaは現場の基準・仕様書に応じて設定してください（既定値K=1.0・a=0mmは暫定値で、特定の規格を示すものではありません）。
+        既定値 K=1.2・a=60mm は強電基準の標準値です。現場の基準・仕様書に応じて変更してください。
       </p>
+
+      {sidePanelHost && ReactDOM.createPortal(
+        <div className={`rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden transition-all ${paneNarrow ? "w-full" : savedPanelOpen ? "w-72" : "w-11"}`}>
+          <button
+            onClick={() => setSavedPanelOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-3 text-sm font-medium text-slate-200"
+          >
+            {paneNarrow ? (
+              <>
+                <span>保存済み結果（{savedList.length}件）</span>
+                <span className="text-slate-400">{savedPanelOpen ? "閉じる ▲" : "開く ▼"}</span>
+              </>
+            ) : savedPanelOpen ? (
+              <>
+                <span>保存済み結果（{savedList.length}件）</span>
+                <span className="text-slate-400">閉じる ▶</span>
+              </>
+            ) : (
+              <span className="mx-auto text-slate-400 [writing-mode:vertical-rl] flex items-center gap-1">
+                ◀ 保存済み（{savedList.length}）
+              </span>
+            )}
+          </button>
+          {savedPanelOpen && (
+            <div className="px-3 pb-4 border-t border-slate-700">
+              <div className="flex flex-col gap-2 mt-3 mb-3">
+                <input
+                  type="text"
+                  className={`${inputCls}`}
+                  placeholder="名称（例：現場A・K-2）"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                />
+                <button
+                  onClick={handleSaveResult}
+                  disabled={!saveName.trim()}
+                  className="bg-blue-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg px-3 py-2"
+                >
+                  現在の内容を保存
+                </button>
+              </div>
+              {savedList.length === 0 ? (
+                <p className="text-xs text-slate-500">保存済みの結果はありません。</p>
+              ) : (
+                <ul className="space-y-2">
+                  {savedList.map((r) => (
+                    <li key={r.id} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[11px] font-bold rounded px-1.5 py-0.5 text-blue-300 bg-blue-500/10">
+                          W={r.results.width.toFixed(0)}
+                        </span>
+                        <span className="text-sm text-slate-200 truncate">{r.name}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mb-2">{new Date(r.savedAt).toLocaleString("ja-JP")}</p>
+                      <div className="flex gap-3">
+                        <button onClick={() => handleLoadResult(r)} className="text-xs font-medium text-blue-400 hover:text-blue-300">読込</button>
+                        <button onClick={() => handleDeleteResult(r.id)} className="text-xs font-medium text-red-400 hover:text-red-300">削除</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>,
+        sidePanelHost
+      )}
     </div>
   );
 }
