@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect, createContext, useContext } from "react";
 import ReactDOM from "react-dom";
 import leftPaneBg from "./assets/left-pane-bg.jpg";
+import rightPaneBg from "./assets/right-pane-bg.jpg";
 import {
   Search, Calculator, ChevronLeft, Ruler, Layers, CircleDot, Link2, Flame,
   Zap, Grid3x3, Boxes, PieChart, Plug, AlertTriangle, Plus, Trash2,
@@ -2721,8 +2722,15 @@ export default function App() {
         </div>
 
         {/* ===== 右ペイン（独立ウインドウ・独立スクロール） ===== */}
-        <main className="flex-1 min-w-0 rounded-xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/30 overflow-y-auto">
-          <div className={`flex ${paneNarrow ? "flex-col" : "items-start"}`}>
+        <main className="relative flex-1 min-w-0 rounded-xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/30 overflow-y-auto">
+          {/* お遊びで仕込んだ背景（本文の可読性を保つため暗いオーバーレイ越し） */}
+          <div
+            className="absolute inset-0 z-0 opacity-40 bg-cover bg-center pointer-events-none"
+            style={{ backgroundImage: `url(${rightPaneBg})` }}
+          />
+          <div className="absolute inset-0 z-0 bg-slate-900/80 pointer-events-none" />
+
+          <div className={`relative z-10 flex ${paneNarrow ? "flex-col" : "items-start"}`}>
             <div className="flex-1 min-w-0">
               <div className="max-w-2xl mx-auto px-6 py-6">
                 {currentTool && (
