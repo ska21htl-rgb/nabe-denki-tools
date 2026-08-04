@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect, createContext, useContext } from "react";
 import ReactDOM from "react-dom";
+import leftPaneBg from "./assets/left-pane-bg.jpg";
 import {
   Search, Calculator, ChevronLeft, Ruler, Layers, CircleDot, Link2, Flame,
   Zap, Grid3x3, Boxes, PieChart, Plug, AlertTriangle, Plus, Trash2,
@@ -1217,6 +1218,136 @@ function RackWeightTool() {
   );
 }
 
+function RackWidthTool() {
+  const wireTypes = Object.keys(WIRE_DATA);
+  const [cables, setCables] = usePersistedState("draft:rackWidth:cables", [
+    { wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 },
+  ]);
+  const updateCable = (i, key, val) => {
+    const next = [...cables];
+    next[i] = { ...next[i], [key]: val };
+    if (key === "wireType") next[i].spec = Object.keys(WIRE_DATA[val])[0];
+    setCables(next);
+  };
+  const addCable = () => setCables([...cables, { wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
+  const removeCable = (i) => setCables(cables.filter((_, idx) => idx !== i));
+
+  const [k, setK] = usePersistedState("draft:rackWidth:k", 1.0);
+  const [a, setA] = usePersistedState("draft:rackWidth:a", 0);
+
+  const resetInputs = () => {
+    if (!window.confirm("入力内容をリセットしますか？")) return;
+    setCables([{ wireType: "CVT", spec: Object.keys(WIRE_DATA.CVT)[0], count: 1 }]);
+    setK(1.0);
+    setA(0);
+  };
+
+  // D：電線の外径(mm)。丸形はそのまま、平形(VVF等)は幅wを使用（ラック上で占める幅の方向のため）
+  const cableD = (wireType, spec) => {
+    const val = WIRE_DATA[wireType]?.[spec];
+    if (val === undefined) return 0;
+    return typeof val === "object" ? val.w : val;
+  };
+
+  const sumD10 = cables.reduce((sum, c) => {
+    const d = cableD(c.wireType, c.spec);
+    return sum + (d + 10) * Number(c.count || 0);
+  }, 0);
+  const width = k * (sumD10 + Number(a || 0));
+
+  // 参考：ネグロスQRタイプの標準幅の中から、計算値W以上で最小のものを提示
+  const standardWidths = [...new Set(RACK_DATA.map((r) => r.width))].sort((x, y) => x - y);
+  const nearestStandard = standardWidths.find((w) => w >= width);
+
+  return (
+    <div>
+      <div className="flex justify-end mb-3">
+        <button onClick={resetInputs} className="flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-red-400">
+          <RotateCcw size={14} /> 入力をリセット
+        </button>
+      </div>
+
+      <div className="rounded-xl border border-slate-700 bg-slate-800/60 p-4 mb-4">
+        <p className="text-sm font-semibold text-slate-200 mb-3">係数・余裕</p>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="係数 K">
+            <input type="number" step="0.1" min="0" className={inputCls} value={k} onChange={(e) => setK(e.target.value)} />
+          </Field>
+          <Field label="余裕 a (mm)">
+            <input type="number" step="1" min="0" className={inputCls} value={a} onChange={(e) => setA(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      <div className="mb-2">
+        <p className="text-sm font-semibold text-slate-200 mb-2">収めるケーブル</p>
+        {cables.map((c, i) => {
+          const specs = Object.keys(WIRE_DATA[c.wireType] || {});
+          const d = cableD(c.wireType, c.spec);
+          return (
+            <div key={i} className="mb-3">
+              <div className="flex gap-2 items-center">
+                <select
+                  className={`${selectCls} min-w-0`}
+                  style={{ flex: "0 0 28%" }}
+                  value={c.wireType}
+                  onChange={(e) => updateCable(i, "wireType", e.target.value)}
+                >
+                  {wireTypes.map((wt) => <option key={wt} value={wt}>{wt}</option>)}
+                </select>
+                <select
+                  className={`${selectCls} min-w-0`}
+                  style={{ flex: "0 0 32%" }}
+                  value={c.spec}
+                  onChange={(e) => updateCable(i, "spec", e.target.value)}
+                >
+                  {specs.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <input
+                  type="number"
+                  min="0"
+                  max="99"
+                  className={`${inputCls} min-w-0 px-2 text-center`}
+                  style={{ flex: "0 0 18%" }}
+                  value={c.count}
+                  onChange={(e) => updateCable(i, "count", e.target.value)}
+                />
+                <button onClick={() => removeCable(i)} className="p-2.5 rounded-lg bg-slate-800 border border-slate-600 text-slate-400 hover:text-red-400 shrink-0 w-9" aria-label="削除">
+                  <Trash2 size={18} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                外径 D：<span className="font-semibold text-slate-200">{d}mm</span>
+                <span className="mx-1.5 text-slate-600">|</span>
+                (D+10)×本数：<span className="font-semibold text-slate-200">{((d + 10) * Number(c.count || 0)).toFixed(1)}mm</span>
+              </p>
+            </div>
+          );
+        })}
+        <button onClick={addCable} className="flex items-center gap-1.5 text-sm font-medium text-blue-400 mt-1">
+          <Plus size={16} /> ケーブルを追加
+        </button>
+      </div>
+
+      <ResultCard accent="blue">
+        <ResultRow label="合計 Σ(D+10)" value={sumD10.toFixed(1)} unit="mm" />
+        <ResultRow label="計算サイズ W" value={width.toFixed(1)} unit="mm" />
+        {nearestStandard && (
+          <>
+            <ResultRow label="選定サイズ" value={`W=${nearestStandard}以上`} />
+            <p className="text-[11px] text-slate-500 -mt-1">※ネグロスQRタイプの標準幅です</p>
+          </>
+        )}
+      </ResultCard>
+
+      <p className="text-xs text-slate-400 mt-3">
+        計算式：W ≧ K{"｛"}Σ(D+10){"｝"}+a　（D：各ケーブルの外径mm。平形ケーブルは幅wを使用）。
+        Kとaは現場の基準・仕様書に応じて設定してください（既定値K=1.0・a=0mmは暫定値で、特定の規格を示すものではありません）。
+      </p>
+    </div>
+  );
+}
+
 function WiringCalcTool() {
   const [phase, setPhase] = usePersistedState("draft:wiring:phase", "single");
   const [voltage, setVoltage] = usePersistedState("draft:wiring:voltage", 100);
@@ -2288,6 +2419,7 @@ const TOOLS = {
     { id: "occupancy", name: "配管サイズ計算ツール", desc: "配管に入るケーブル本数を判定", icon: PieChart, Comp: OccupancyTool },
     { id: "penetration-occupancy", name: "占積率計算ツール", desc: "貫通穴に対するケーブルの占積率を判定", icon: Target, Comp: PenetrationOccupancyTool },
     { id: "wiring", name: "電気配線計算ツール", desc: "電圧降下・幹線サイズをまとめて計算", icon: Plug, Comp: WiringCalcTool },
+    { id: "rack-width", name: "ラック幅計算", desc: "収めるケーブルの外径からラック幅Wを算出", icon: Ruler, Comp: RackWidthTool },
     { id: "rack-weight", name: "ラック重量計算", desc: "ラック自重とケーブル重量から総重量(kg/m)を算出", icon: Weight, Comp: RackWeightTool },
     { id: "rack-seismic", name: "ラック耐震支持計算", desc: "耐震クラス・設置階から地震力を判定し計算書を作成", icon: ShieldCheck, Comp: RackSeismicTool },
   ],
@@ -2384,10 +2516,17 @@ export default function App() {
             ${navOpen ? "flex" : "hidden"} md:flex
             flex-col shrink-0 rounded-xl border border-slate-800 bg-slate-900 shadow-xl shadow-black/30
             overflow-hidden
-            absolute md:static inset-3 z-20 md:z-auto
+            absolute md:relative inset-3 md:inset-auto z-20 md:z-auto
           `}
         >
-          <div className="hidden md:flex items-center gap-2 px-4 py-4 border-b border-slate-800">
+          {/* お遊びで仕込んだ背景（本文の可読性を保つため暗いオーバーレイ越し） */}
+          <div
+            className="absolute inset-0 z-0 opacity-50 bg-cover bg-center pointer-events-none"
+            style={{ backgroundImage: `url(${leftPaneBg})` }}
+          />
+          <div className="absolute inset-0 z-0 bg-slate-900/85 pointer-events-none" />
+
+          <div className="hidden md:flex items-center gap-2 px-4 py-4 border-b border-slate-800 relative z-10">
             <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAgsUlEQVR4nOVdebhcRZX/Vb8AWdgS9s0EBNQQIGwJiygCMogOMAIiDKgoyugoiozfqDCfgoiOygDjgjoCDiiIfjgOhCggGAz7agQkEBOWBMIek5D9vf7NH3VO17n16nbf7r73pV/mfF9/t++9datOna1Ondoc1lEg6QDYH8yV8oN57sy9fVcHQOecfbbOgGudpPdBmF1DqM9A2QyLyiCA+rogFMNSAIx21+AZUU+kGQ1gEwATAYwCsAuAbeCZtx6ALeQ5ASwCsBhe2x2AVwA8IfdPAFjqnHs1B48+GIEg6YaTYAwrASBZA1BzzvVHzzeCZ/TuAPYGsBeAbRGY3A2sBrAcwF8BzAMwG8ADAGY55+Yn8BsBoD8llL0IPS8AqmUJpk8GcAiAwwBMBrB9ThZ1DG7zFaxPkPeuLyff5QAeAzATwK0AHrJWgqR+19NNRc8KgGiTc84NmGf7ATgGwHvhmZ75BIHZKQewY1TkWjf3avotvAbgHgD/A2C6c+5Fg3cfelQQek4AhPFQE0pyOwDHAzgJwNQoeT8Ck2s2m+inkGJcCvqje3X+4p6CCl0tKv91ADcDuBLAbaYuIwAMSP0qF4aYlinoGQFIMH5fAB8HcCK8M6fQj8EEt9ofvysbVDjycACyQvYwgB8DuNY5twQIgtALFmGtC4B2r9TUkzwIwBcAHA3TrcNgLa/Lrw+D67EcwLPwTttL8J78ywjtdkojtHs3Ct6ZrAGYBO9I7gHvVG6d+E6tkO2GqjBYnJ8F8D0A/+WcWyx17bNN3NqAtSoAJEeocyft+5cBHGuSDCBL2DymvwDgQQD3AngEwOOxh14CrpsA2BnAFAAHwDdHu0bJUtZJLZNahWcBfBfAD51zy7RLO1x6DaUAyZpUHCTHk7yM5AA91En2MwsDiWePkvwGyYOFOXnljIh+tQK/+JtBiiLP9yb5JZJ3RvhpHerRszXm/kmSJ9n8qqN4D4GtKMnPkHzFECVmckzEZ0leRHIqQzdL81LG9VH8iZLxdraMxPvdSH6R5J9a1CEWhN+S3MOWUTbuPQG2ciQnk/yDIYIlSIpod5E8lT7gY/NUhlfelMXMiQTCmec1koeRvJbksqiOtk7Wqi2ntyRKnyI9leEDtkIkz5IK5xFlwNxPI/muKC8142vdgbWgwhA925nkxSQXR8IdC7vCH0nuJt8mm55hB0oUkluR/N+cisdm8WaSbzd5OA6RprcLglv864uEfkcRhCU5gm7rv5jkh0zew7dJMMw/iL79JgdrvRWER0gea76vcRibwxh/EYSrTX1TTZ/CpSTXk++GFw1EcpX5p5iKxRXW+2X0beAo+aY2rCU/AkbNA8kjST5utD/PGvye5ObyzfDoJQjz++T/N6UisckbYLACM0hOMt8PL2lHiGIWSWdoM4bkd5pYA72fR/Kt8k1vCwGznv5FUoHYo1drMEDyHIZ4QKlOT5l5tShH67te0TKZbRYOIznHMN3SSoXgBZJTJH1vCgGDA1QjeWWLCj1N8jDz3bA090abJ5P8cDt1YbaZHEvy50YxUgqzjOR7JX1vCQGN50vyVxGzY+bfSnIr+a7UigylIDE4aFPpg1lv6QSHyBp80dArbjJVGI6WtL0hBMy2+VcJoqsN8tap+YEhXG9UoAMwmrsXfddumtx35L9E1uADJJfmCEGd5AqS+1s81ioYhqpDk8f8b0u6YWvygQzzjyK5SOp2qGViCXlPJrnQaH1sCRYyWJy15zQbhM/LYb4i/2+anj0YzCkKRtg/YpjxKLsIUong2FCy0nS3HCHQ/wtIbi9ph16hGMz+BwQh6/BZzT9bK7aOMP+0SNg/L89Lq58Rgkk5QqC0/SPJkd0IYKcIatdnEsmVHNzPVwTPl3SFu0i9CJHma/0G6MO2W8o7F33TVX0jIXhRyrU0VgH8kU1fOTB09TZi6L+mpPMiRWyYM18Z8THDBCX+T+VdJe1wJAQvc3DUUPE4vUo88pC6PmK4/X+1ph2uzGe2d3O2EfQ6Q1O3n01XER5qfY5kaFptU9tPb4UnSbrq/AFDkDMSzFcrcD/J0axoYkaVwBCVtMy/MGK+Xh/gEPVojBB8vAndH6JvaqvxByhj8PRj3EuZDfGqD/AyyTdL+mEX0wcGMf8SQ3CtqxL8E5JmSNpeBsv7gyZCcKGkKZf2EVFuiwq1yLzPIjvU0K3kR/X8T6lT3LUlyZcos5OKllkWbiTXJ/lwxAO1TAP0k2vLFQJDlI8mpE//f0/SDGI+g+OY90u+L60CxeqYYn5eOPvSvLo2yduOlTSjR+NdIh/FbyL9rCprhVUY7jPC0n1TYBDbgj7mbbt8Wuhs5vRHS0GiREjhU5D5ZHAA95S0Q97MMTQFn0vgqf8/VhS/lsyhLF4QqT8Tfu67Sr4u2DjEOTdT08p3TpZLrw/gF/ALLOKVMHYBpl3E6QC8COBk59yaVjh2AzQLU0wd18AvIbcwIHjOdM69g2St1Vx+Q7sp8ItCViMsT6sj0E8XpTh42q6S/xc4526O6QpZLEvyNgCHGtx0McqLAN4GYCnQxeYWxiTtRD8caYcqVft/IGlTpl+1anpCm4rAropHRxVoXT87CHOplLk6Bxet7yl59U3kr9772Tl5dlR/iqWlDxdrIE75olbgm5q2GwIpA/87ylybgRdJbs78NkuJe7qkXymEbPVbJelPLkrsDupmzb4yP2X2tb6kD8tuqN8XKEPzv87Uq1XdV8t1Fo3vkMhbaWsn3pChmXqD5HbstKvKoP1vMwyJtf+fLTKpPOQ6kYMnhzQDZcR3m+XfKViisDXz7btvtYsPfd9cI6YDydzTZV3WrCwGZ3ET+hlDNkqoeVzcLr62AJXeK6JMVRCeoO+S5M7R1+dChLnyfREhsEGlpAZ0ChZfhplLeWZfoU6vBIUnfTAI2FsM7dqp+3HyfS7zGKzA2dG3agWWktyW7VoBBu3fgd6U2PCnFnKCpG3axhgkfxZ934rglLK3le+7FgLDlPVJXiNlNNN8fV8neYvNo0BZWu8Tu6x3bnkMVmBDks8xbQW+ZPGJIS/zmniOnwIwBsFb1c0QZgH4Nb0nXHR58+8KpoMpawyAPVvgWggE1zrJkQCmwW84YXs0zXBxAH7IsFNYO3CgolAgrfYqHgWwkC16GsKjmnPuDQCXINANgicBfJLkGAADhZSIwTxuSPJ5prX/NElTxBNWrduR3gm0+bXSPJL8StGyCuAwhn6uPdna7NNo0zySo9hGc8TgwD0Q0a5Inf+9DfpqOZtwsC+gZX4wzk/rkZJmDeYcA78pgvYtVfsXwGu/g2x30gxE6xz8uvinEPq8LT+V6/5y7Wj9PIPmj4HX/MPgNT/u56dAy7zKObcCvv/dEneGreK2ge+PA8Ush6a5XbNq9YGxAosBXI6sFdA8Pir/69F3SeRVW25idlpXxxrJ0B5+P8qrGaiVeJWy/p9t+gHMav4fJL8imq/l6yTM8Ta/AuWqA32k5NVO+7+IYTVQOwtONF6zyuCuvzXMiSnEAQbVlh0AvAthixPd4WIlgKuEEe1opErbHXItwkgtYyyAt6TwbVpgqMtoeM0/BMU1HwiWb7pz7ln6aFzROiue+yk6BcsDgEedc6+yRftvQdLVnHPz4DenUtqplR4B4P0RboNvzP3R8Hvl6P43mtkM59zTUlgh5ERYlAD3wO/T04fiRKkhNANF29885rfjR2hZP27jGwWlzUFRXs1A6fEHuXbq9F4e3Ws+J7BVs21MZjzkq9eOI3MMXZb7Ja92giK/kDxahjVNHUaTvD3KpygobhrrKNz0MOtE61y+Ik6vlnlw0brmlLsxs3MImzYDdscL1ZqtETTOmv+/AbhFnneys5Wa0BlyX8SCKH770A8qtRp80TqMAnAjfDPWruZb3K50zq1u83sVlp0RBsBaCZBub/cSgD9FOBQr1A+89clWdDeZPGwz8B553hAua2b0/zsAjEYw/8rsGdI2FfKEE6DfqIdb1CsmgPEAxkslk99FzJ8GP0q2Bu0zXwX+DQA/k2ctmWGshOJ3gPwvoiya//3OuaVd0Fi7qdP1ProeKdcGTilivjsn8+mSeacROa3kwwCWIDC3yHfrIThUqUEn29WbDs/8dhw+Cxr0utE59wIL7uVnGKbXKW2Uqd/cqdm18a0F3Y72bgDLEHwta0k3MV3zDDEHRLtS5r8f3gLY3TDbAtVe59zL8Js1omBeSpx4m1j/MjB/Y3jmH4LOzH4DVSnzR+a+HajT+0iKbxFLp2P5hfv/Kb9E6FBzzi1EtinROm0Bv/llAy91mDT0uz38vvowHzkAcwA8TR/g6GZDQyXGTK1HgW+0olMYebGinXX6OMHN8M1XN8zXiRWzAMyU+sb7BjeAg5d1WTruiED8ZqBpFqANxWjSRCiNtcut6ZRue2sWNrEiuSeADZCN/QPAPUKIbqdAKTK3ReU2A8VxdwBb6aEMQuwBkmPhxxn2R3fMt/hdJeXqaGdq3p5zzlHxiXCdCmAkwi6nzRhqabyyi/Y/hrvlGtM4E5uIBWBv+9LAfSUgBITKPgi/o3aReIAdGJosz9YTzd8Mfq/+spjfB++Jf8851++cW+Wcqyd+mWlW9r9033YHsFDyWoNizYD2/7sd9VQaPwY/tSz2A3aXpr4O81AroO2Dmn/V+FlRuo7A+AGL4J1Bi3Az0D2CjxDNWy2a/1sA+6B75gOhuXsWwDH0w7hHktyHfiBrR5IT5LcN/ahiXL9+59yAc+5c59y2ACYA2A3Bn0jVtQ/e4t7VJE1hME30AqmLrRsAvBnAOOWFEk0/2inOD/4snXllICeg0jcDwOEoLlQ1AK8K4lsDuAHenJXBfM0f8N77r6J3sR+wEsBrJJfKvRK4H8CT8GcOjQbwe+fctSRvB3AGQmRTQe/nAXiqBB/LIxOaxyfhN7RW/Ch4bQ/gVQDORpDG0Q+8kNkhxcfyCuoQOR0oOTiKgOWBRvG+Lt+NJflg9K5M0KiZLrToFBbRT4XbmH5KWLywkwz4X25pUwKNdfDtkqgcjeg2FvDYrdjHALB78apmzpXEZc3MVQmfBa8pzeIBqt1fd86dQ9/m/w7lmf0U6NTsPmSbyPhXT/x0CvtT8Kb/SXhLtTOy7bAtC2jPKW4H/hzdK5130AdWAN4KQMOtdgBnoUnbNRg/YAmA++VxKtCiDL7QOXcu/RDpTfAmuirm54FL/GrRT4+jmwfgCHgTezuAdyKce2BBfaxVCB572YdHLDL4W2h09a0AbGAQs7AQ5UPcV41BY9cXiuaPhQ/vTsXQM78IaPxgAbxfMx++d6JxiZRpV0v4BIDnyFLPG9S8H0c4YCM+OwlAlpCb52T2VElIWbBDn7a3AQRiXibM3xDA9fDMXwk5ly8n3zwTakPYZZtZJfAyAP/gnHuaftewVkEppcFd0qVtVq9OIbYoWvc99P0I83BihJhCFatyVEL/AuB5eK/UHrj0GIAvkBwH39XTuPqgrtdaBm0uVwM43jn3IMmfwB9rl1peZkHpfnuTNIWgifXQ5WcxDzfUP1Y6Y83Q+yVaTjdIZjIOQ5fLSd4FfzKYnc06S87TIYCvwbeTI+EPbdoW3lm15/htAH+y2NYANjb467ut5f2AvC/DCijz+wG83zn3O5LfAfAxtB6IUqu3DKH977j7l2C+3r8Ev05wB2T5F8piWL/27ajLoJMYDpT3XXdRmJ2Vql0Vu9uITl5YRr/72Lhuy5QyNia5JcnDGTZ46gZ0osVqkkdJGTtF75qBdsdmyreVLYUn+ReDl5Z7j5ZbxJlapXl1i0w0sGKHQLUdBbxWjQZwHYDFJG25L8M7pa8B+DC8T6CaTqRxpPQ4lpA8FcGH6JTodnDlWOfcdGHgRINDq7zjOZKN0OxQQxEBiMcLSgEzxv4UfNdpZ2S7oET2wEgA2BThqLbznXOz2GK8nmEp2AQAH8Rgp7MdIEIP5VRh/ijnnG7fWnTKu9J0hsl3rYCV1Lx2ZHRVhQvz1mBwO2hnI8fBl1VynWLSNgMNr/4TfJxDRzrbRheB+Wc5566hbz5Xy/t9C+KjFmIRgIfk2Vo7M9AKQKwVKgBbybXs7pPN849N3sfBF43Q6ZlCudojml8nuQWAT6Bz7bfM/4pz7hJKt01i7qPgI3+2TnnQGBF1zi1imENQGjCE9zcDsGUCr0Z5Ngz7tzgfuXYyraooKDHuRCBwK2LY6U01eAbnEV3H1j+I0AvoRJAt889nOPFUcdkVvnfSTvv/e7lW4QBqHTeFX1cRQ6Ppt4XroE9MoLKDEw0wI19/RRhxLDI/APDDmtsLgwcxVYRigH5twFkoxpwU6MTS8yLmW1z2RbEJoBaHGeZZVRDjo2U9I1cXD02mID4ft1QwTlzR/rBOCxsJYC95llzjKMJxPML0rHYFQIM5lzjnvkpz/LuiL9fkfMUEqAA8D78CGM0c2BJga2Sn9ik8I9eabQIWIT2HbbsKEYQpr52ImOJ8cJM0dWkiPoPOtEyZf71z7ixlvrbXxr9w8KOTQDEHEADulZ5DVbuMqaBPQHZqv8IKm1CRmoPQP7YSs41cC3uqTdrkFDTmxKG4H9CYKJrCjWEd32Hw5tnGGYqARvKmAThFGDUQO2tyvwXC6FrR9l+FvQrH2kJqgg9gZnhZAVgKHzoEsgKwC9ucqdKOV2vynQsvhFp+M1BC70ZyrJ3nHsGni+JhQAdwpsHH91fKNK+8MZK9EELTzRhqeyDa66m6+7dLdK/NQWMmU01ntTq/y8QCfYFQme0hXYmqQpbiWNVRfF6cVmQcQvdLp7j3wZvm3eGXQrWj/cr8mwCc4JxbRX+0XWpvoHgibSuclaZzAcwGMsJfNqjJj6f41+DrOFtx0gopgZ6IkK3DS7fNqEpoZ2asVvKA6BsdGfs0vBkvSmRl/i0QzSd5JoALABwnaVKBs6IOoOJxl/ObPFYyp4Fhg86Yb3aASCeKDNLoh6N7RXqyyagKaBAHPrJWdPk4EASAoqEDJLdBe2FfZf6jAE4S5p8G4FLB7TT6WcADDGsCBiQSqGPrRa3jba2TdAU2NrElgjIrPWc7597QAFQ8LfwRZPuqyvCDonRlgzZDzyDEI4r6AXuRXF+6U9r1+xT8sG+RwI86ns/AT+h4neRJAK5A2L52ZwCHSt59Js8JCPPrWgmAdiG7Hv5tATY2AQQaKD1VycPSMIPMX+DNQ9wTmEJyPZH60q2AISzgrYDG/ZuB4j4eYQeRfgn8nIZigR+dffQMgCOcc3NJngi/KjieG3m6XG2+eyAwthlY+s5jdtOMskHzfXv0XPl2n01XAzITNf8GbwWALAEmwK92aXxTAdgQqcb9W4EuYd8baAjSh+FjF60CP5b5hzvn5gjzr5H3Ov6gzdGRJN8klsYuAbe454EKwExx/Mpa/pUB0zSNhJ+SBmQX+a5GsABBAExCILuoUIMINfg+NVC9H3Af/EyZosvHAXHE6DeROBODI1+psvrgI3LvFs3/AALzYb5XGowC8JEon72jtHmgtNUNNqrSfi1nT4RZQJaOswHMT3brGRZsHGRmkNjZK3fI+ypnr2hX7t6o7DxQHB8X5+x9Bb7TGTurGI5g3YXZ42/yypkr2qWzjOxCmjzQd8vpndNSdj3NoZ/OsvqqlLnGXOsMp7cmB4PsBg4LEGapqARNJbmjBF2qEgLNt+g6+QbOYlLPLZBeNfo459y99IL/PPxgVF55OtCzE4B3yzf7ANgMxawNADzinNPdP6uyALrHwzFyr3jp9H/dOiYzHOxThomaK+DX2qsjpgTbAMCx8XclQxwqbVVOH3zM/hySE+Gbgryun23SjnPOTRNNcM655fCRP4195OFGAGeIH6ALaVuNlmqdNMhVVTBNBWt3+SkdtBl4EcADkjxdR2NCjhLTEe8S9jArPCqNYSLDpiRfa2Fe1bz9Ur5JnWNozXC/vDta0utkWG369pe0RdYqvofkzILp9f2RtrwKaKe8+0ZEBzX/P2lZPgMDRtPvE2wroG3ngazwsEQGP+AWKTevPVe8JtHPyM3bg9ieY3yq5L2eKc8e5vRoizLbBbv75zhL4wro5ui3tIvPJtC6qABmIpAZTZZmYISYxF/K47q5OngTWOUkhlRvJAbtmdzhnHsMwOeQHvbUtCMAnOucu5o+ntE4h0hjEOIVX9ekTAsskAbI+iivs6L2n2FXkb+DD1opfbS3Mx+Bns1jFgwauAezc9xVw5bQnyNQSVPAYJIPjLTIgkr3gfTL2pcybQHiQ6xbnWyyK8Neu2WAlv/VZuWXSLObpLx4f+f2TjoxBJmZk+Gg7kSJldFmaAz99udktp3Vs/LulXTnRLjFxP9aEVxNne+M6twNKN7vlLxLbzYZDpCawsGnuOueBG+zdSySqToUJ0TEUC1bRL/SptTjXGyl5PqbiJkWl2Poj6JZyMGbL+iO4BdofVrhaep8elROp6BW5BV2uNt5h7SyyloneaNNVzRTdYz0wKPUIQSN4+ErqJQy40xTGTI0SXMEv09E78nA/Gs1ryKEZ7AAW5BczOIHW+SB4nSD5Ful9u/DwTua6P8jLE3byVyZ8EnJyFqBAfpzbbZnBb6AYcZuTB+P+iF5P49Z4VTmTye5gRKojXJVm5p1KYuCfvtZS8+S6aT4TovoozR7kGZru3YzVyswKkFoLejKCivn6LX3KUPQOskFwlgN+8bM/y39mEDbJtcQ9L1RPTsBpdc+Nu8S6aO4HpHAtdFMdlW2KeTknELqJA/qqpD8stUCXS7lrZDrOfL8AWYDPKQwnx1aJQahH01yvuTZyUpitVjz6VcNldr+MxwOPYLknyI8lUcPdkqHuCA1IQ9GBWiBfxail3NadShbBeAfTXmv0e/Db3cYU+bfyqD5HVfalFvkQMk8UBr9WvKqSjk+F5Wn/+sk31FK2QxW4J2Jwgr1szssV/2ACfT7BZChS6dnEa+U6yMMnnZX/oip71Smt3YrAkqXpierdoifblU7nt5ZTZ0bfL2tSxmFKlH0sEXrEOqZt/uWWigyJvlhKWMz+qNs1zC0+c+S3K7MshlMbGxei4LSpb3+d0G85H8cKldhXUa/q2l5zjlDM7AV/Ri4DTjodTZ98KZ9jzO/XDV1VzOY0+sYJP45kjvL8zIFT8v9VymnnWZA6fFXBn+kbHp8PoGX/v+ypCm322kk76Qmhf9M0pSyophZr3wSya3pJ1ZUxnzJT5ufnRgOuywKSoufSh6lmH9DiwMYrG48ieVRVuCPWSRUAq9tIgSfljSlLysn+S0p42mSu1icKiir6KhkDJpORx67xs/gMpaDeyc62jlAUqfGVbPmkKFXMK4JIv0M/c+uhcCUuRV9CPpFhtOvKtsw0gj7R6R+qxg2WuqP/sf3KxisU7dOaY1eo0eSnJEQRlW88yzelQGzvQLthllTVKf3TieWgZBhxAVSxv72eVXA7Cbab7A9eEIY1y3znan/lRHDrSDcIUJSjelPIKZIfVkQsMexqkV4gcEL7ohZhgljSb7OxCHIVQKD6T2P/rzDu+knrN5HH4i6V57dSfIh+X8/yX+R7zo2xcx6/Bfl0LkudH4TK5yplYegCsHPm0jm890IgSHAWWzjxPIyYUg0KlGmoe9FCfra5vYwSVfVXgNNkazRd/1mJJAsSwg2ILmH/B/aSgYcGucE0XTrmtx3E4lMMT8+8FrpvFaUwiKrJnJzhskbqUGJ59mlT9ANUYcLWOEh+Z2EUtn79mb5VIi0mumJLYTgVZqJiWzDtLaTdriCtW4cfNKHglqC7+s3PUGbSAgWJoTARg3VbA2t09LDwGDyN2QY58hj/m8kbW8wX8FUYiLD6dW2EjZ8fJERml47/GHIgNn2fhLDtPQ8s/8bep+otHB7qVBACHSQhPRHuzdCuf/frAGzJv8U+tgJmbWcuiM5Sf6YkdPZkxAJQSuJfoXkyfG36zKI9qr1G0vyCkOX1Ixe0p9D0BiUW7s1KACmghsx20W0gypW0n9Bcgf5prJVR2sTaMy93B9NP2KotMijzdmSvrfa/FZghGAkycsSUq33WtlXKBMo9PthIe0tIMH4N4vAK+RZx0Ukj5dvhhfzFSwD6WcXr8iptJX4mSQPt3kMR4uQYPymJM9naOtTiziUDg+Q3E2+q3Kz7uqB2Zj2VJKPFSAASf6aMvBj8hrR61YhFlj6jSTOIvlMjsDH9z9imEi67vhEDM7hRlJJhZQ1sIJxI8m/Z9aaDN3IVwEQpo+IcNxCGP90VFfb1ttzfF6g36OokefaqU2FEGnGsQxz/mPtT2nJIyQ/S/JNUZ4N4g+VQDCMgwyySCQnk7yYoRucYrxdsk6Sv6KZ19grgl0JMNskbCzEslPN4wmYsUVYQh8QOZnklon8db58XxlCYZjdyDeRZkf6089ui3CNcY8ZP49ZrV93TH4rYNYaTGFY3qSCEFsAuwZA4XWSN5D8DP36uKTDxLDKqN1fUnjo593tS/IL9OsRljELrTR+Gcmv00xlzyuralirpkYqXdNDE+i3b/kSAHX+dJ8i3eTIPgMG7wU0B34fnIfg9z2eA+A559xqdAgiVOPhD9feA34Ltr3hN2KwoBsvxLjqBhWAP/DqCgAXO+fmSP5NTz2rGnqiraG0o7p3Hf2cwk/Bn8KtoGcZxBs263auKfNZh98IciH8Ue5r4AVjEQYf8ab3myFsALUr/HkJE5DeeEo3qmwloMsB/BzAfzjnZksd+wDUK95tpSX0hAAoxNpA8mAAZwA4Gn7XciBolRLd1qGO7BG0ZXrSzfLOE8T5AK4G8FOr8QBY4VbxbUFPCYBCTCSS4+HP/jkRwH5RctVC+2tkFf3ahVb56r5J1jqsgN+P5xoANzjnFqfq1CvQkwKgoI5iZBWmADgK/oTuvTDYNA8AjT0BU8xrCwW52oOqY4YD/gSOe+D3V7xRtV3wHQFv6nuK8Qo9LQAK4iPUorOHQT/N7GAAh8Jbhh2bZKNCVMQSqNDkNSH98Efe3g3gVvhDIJ6P8HXogTa+FQwLAbDQRBhGwTttkxG89fHwBzp2evztSgBvwB/zMh/egXwY/kyDuZa5ihd6WNtTMOwEQEG6kKqlTHWl6PcLGAe/fbyefvZWZE/SiGEu/N7BawA8DmCZc25RIp2NZfS8pufBsBWAGCKBAErURI1XIHQVCS90w5LpFtYZAUiBEYrYEWxWb5rrOsPoPPg/X9Cfgu9qdoYAAAAASUVORK5CYII=" alt="logo" className="w-7 h-7 object-contain shrink-0" />
             <div>
               <div className="font-bold text-[15px] leading-tight">電気工事ツール</div>
@@ -2396,7 +2535,7 @@ export default function App() {
           </div>
 
           {/* カテゴリタブ */}
-          <div className="p-3">
+          <div className="p-3 relative z-10">
             <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-800 p-1">
               <button
                 onClick={() => switchCategory("search")}
@@ -2418,7 +2557,7 @@ export default function App() {
           </div>
 
           {/* ツール一覧 */}
-          <nav className="flex-1 overflow-y-auto px-3 pb-3">
+          <nav className="flex-1 overflow-y-auto px-3 pb-3 relative z-10">
             <div className="flex flex-col gap-1">
               {TOOLS[category].map((t) => {
                 const Icon = t.icon;
@@ -2439,7 +2578,7 @@ export default function App() {
             </div>
           </nav>
 
-          <div className="p-3 border-t border-slate-800">
+          <div className="p-3 border-t border-slate-800 relative z-10">
             <div className="flex gap-2 text-[11px] text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-2">
               <AlertTriangle size={13} className="shrink-0 mt-px" />
               <span>数値は参考値です。施工前に必ず規格・仕様をご確認ください。</span>
@@ -2460,7 +2599,7 @@ export default function App() {
         <div
           onMouseDown={startDrag}
           onTouchStart={startDrag}
-          className="no-print hidden md:flex w-3 shrink-0 cursor-col-resize items-center justify-center group"
+          className="no-print hidden md:flex w-3 shrink-0 cursor-col-resize items-center justify-center group relative z-10"
           role="separator"
           aria-orientation="vertical"
           aria-label="ペイン幅を調整"
